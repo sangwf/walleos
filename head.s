@@ -139,9 +139,9 @@ timer_interrupt:
 	out 0x20, al
 	mov  eax, 1
 
-	pop eax
-	pop ds
-	iret
+	;pop eax
+	;pop ds
+	;iret
 
 
 	cmp [current], eax
@@ -232,14 +232,14 @@ ldt1:	dw 0, 0, 0, 0
 	dw 0x03ff, 0x0000, 0xf200, 0x00c0
 
 
-tss1:	dw 0
-	dw krn_stk1, 0x10
-	dw 0, 0, 0, 0, 0
-	dw task1, 0x200
-	dw 0, 0, 0, 0
-	dw usr_stk1, 0, 0, 0
-	dw 0x17, 0x0f, 0x17, 0x17, 0x17, 0x17
-	dw LDT1_SEL, 0x80000000
+tss1:	dd 0
+	dd krn_stk1, 0x10
+	dd 0, 0, 0, 0, 0
+	dd task1, 0x200
+	dd 0, 0, 0, 0
+	dd usr_stk1, 0, 0, 0
+	dd 0x17, 0x0f, 0x17, 0x17, 0x17, 0x17
+	dd LDT1_SEL, 0x80000000
 
 	times 128 dw 0
 krn_stk1:
