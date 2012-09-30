@@ -48,6 +48,15 @@ startup_32:
 	mov [esi], eax
 	mov [4+esi], edx
 
+	;中断0x81	
+	mov ax, print_bin_interrupt
+	mov dx, 0xef00
+	mov ecx,  0x81
+	lea esi, [idt+ecx*8]
+	mov [esi], eax
+	mov [4+esi], edx
+
+
 	pushfd
 	mov eax, 0xffffbfff
 	and dword [esp], eax
@@ -108,6 +117,63 @@ wc_o:	mov [scr_loc], ebx
 	pop gs
 	ret
 
+;打印一个整数ax到bh行，bl列, 颜色信息存放在ch
+print_binary:
+	push gs
+	push edx
+	push si
+	push di
+
+	;备份
+	mov di, ax	
+	mov edx, SCRN_SEL
+	mov gs, dx
+
+	mov si, 0 ;共16位，从左向右打印
+repeat_pos:
+	mov ax, di ;还原ax
+
+	mov dx, si
+	mov cl, dl
+	shl ax, cl
+	shr ax, 15 ;移到最右侧1位
+	;计算屏幕位置，bh*80+bl+si
+	;mov edx, bh 
+	;multi edx, 80
+	push bx
+	mov edx, 0
+for_mult:
+	cmp bh, 0
+	je end_mult
+	add edx, 80
+	sub bh, 1
+	jmp for_mult
+
+end_mult:
+
+	mov bh, 0	
+	add dx, bx ; add bl
+	add dx, si ; dx存放位置
+
+	pop bx
+
+	;print
+	shl edx, 1
+	add al, '0';加上asc偏移
+	mov [gs:edx], al
+	mov [gs:edx+1], ch
+
+
+	inc si
+	cmp si, 16
+	jb repeat_pos
+
+	pop di
+	pop si
+	pop edx
+	pop gs
+	ret
+
 align 4
 ignore_int:
 	push ds
@@ -127,10 +193,9 @@ timer_interrupt:
 	push ds
 	push eax
 	;for test
-	mov eax, 'T'
-	mov ah, 0x0004;4
-	call write_char
-	;jmp TSS1_SEL:0
+	;mov eax, 'T'
+	;mov ah, 0x04;4
+	;call write_char
 	;end test
 	
 	mov eax, 0x10
@@ -175,12 +240,33 @@ system_interrupt:
 	pop edx
 	pop ds
 	iret
+align 4
+print_bin_interrupt:
+	push ds
+	push edx
+	push ecx
+	push ebx
+	push eax
+	;mov ch, 0x02; color
+	call print_binary
+	pop eax
+	pop ebx
+	pop ecx
+	pop edx
+	pop ds
+	iret
+
 
 
 current: 
 	dd 0
 scr_loc: 
 	dd 0
+task0_count:
+	dd 0
+task1_count:
+	dd 0
+
 
 align 4
 	dw 0
@@ -247,19 +333,29 @@ krn_stk1:
 task0:
 	mov eax, 0x17
 	mov ds, ax
-	mov ah, 0x0002;color
-	mov al, 'A'
-	int 0x80
+	mov ax, [task0_count]
+	add ax, 2
+	mov [task0_count], ax
+	mov ch, 0x04 ;color
+	mov bh, 2
+	mov bl, 0
+	int 0x81
 	mov ecx, 0xfffff
 t0:	loop t0
 	jmp task0
 task1:
-	mov al, 'B'
-	mov ah, 0x0003; color
-	int 0x80
+	mov ax, [task1_count]
+	inc ax
+	mov [task1_count], ax
+	mov ch, 0x02 ;color
+	mov bh, 5
+	mov bl, 0
+	int 0x81
 	mov ecx, 0xfffff
 t1:	loop t1
 	jmp task1
 
 	times 128 dd 0
 usr_stk1:
+
+
