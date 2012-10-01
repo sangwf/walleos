@@ -35,12 +35,22 @@ startup_32:
 	out dx, al
 
 	mov eax,  0x00080000
+
 	mov ax, timer_interrupt
 	mov dx, 0x8E00
 	mov ecx, 0x08
 	lea esi, [idt+ecx*8]
 	mov [esi], eax
 	mov [4+esi], edx
+
+	;init keyboard interrupt	
+	mov ax, keyboard_int
+	mov dx, 0xef00
+	mov ecx,  0x09
+	lea esi, [idt+ecx*8]
+	mov [esi], eax
+	mov [4+esi], edx
+
 	mov ax, system_interrupt
 	mov dx, 0xef00
 	mov ecx,  0x80
@@ -186,6 +196,20 @@ ignore_int:
 	pop eax
 	pop ds
 	iret
+
+align 4
+keyboard_int:
+	push ds
+	push eax
+	mov eax, 0x10
+	mov ds,ax
+	mov eax, 'K'
+	mov ah, 0x0003
+	call write_char
+	pop eax
+	pop ds
+	iret
+
 
 
 align 4
