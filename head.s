@@ -76,6 +76,52 @@ startup_32:
 	mov eax, LDT0_SEL
 	lldt ax
 	mov dword [current], 0
+
+	;DEBUG:
+	mov ch, 0x02
+	mov bh, 24
+
+	mov al, 'W'
+	mov bl, 0
+	call write_char_by_pos
+
+	mov al, 'A'
+	mov bl, 1
+	call write_char_by_pos
+	mov al, 'L'
+	mov bl, 2
+	call write_char_by_pos
+	mov al, 'L'
+	mov bl, 3
+	call write_char_by_pos
+	mov al, 'E'
+	mov bl, 4
+	call write_char_by_pos
+	mov al, 'O'
+	mov bl, 5
+	call write_char_by_pos
+	mov al, 'S'
+	mov bl, 6
+	call write_char_by_pos
+	mov al, ' '
+	mov bl, 7
+	call write_char_by_pos
+	mov al, 'V'
+	mov bl, 8
+	call write_char_by_pos
+	mov al, '1'
+	mov bl, 9
+	call write_char_by_pos
+	mov al, '.'
+	mov bl, 10
+	call write_char_by_pos
+	mov al, '1'
+	mov bl, 11
+	call write_char_by_pos
+	mov al, ':'
+	mov bl, 12
+	call write_char_by_pos
+
 	sti
 	push 0x17
 	push init_stack
@@ -107,22 +153,141 @@ rp_idt: mov [edi], eax
 write_char:
 	push gs
 	push ebx
+	push edx
 	mov ebx, SCRN_SEL
 	mov gs, bx
-	mov bx, [scr_loc]
+	mov bx, [scr_loc]	
+
+	mov dl, 0 ;作为特殊按键的标记
+	;处理回车按键0x1c
+	cmp al, 0x1c
+	jne delete_key
+return_key:
+	push eax
+
+	mov ax, bx
+	mov cl, 80
+	div cl ;al商，ah余数
+	sub cl, ah
+	mov dl, cl
+	mov dh, 0
+	add bx, dx
+	sub bx, 1
+
+	pop eax	
+	mov al, ' ' ;对于return key，直接输出一个空格
+delete_key: ;处理delete按键
+	cmp al, 0x0e
+	jne normal_char
+
+	cmp bx, 0 
+	je not_delete
+	sub bx, 1 ;减1
+not_delete:
+	mov al, ' '
+	mov dl, 1
+normal_char:	
+
+
 	shl ebx, 1
 	mov [gs:ebx],al
-
 	; color
-	mov al, ah;0x0002
-	mov [gs:ebx+1],al
+	mov [gs:ebx+1],ch
 
 	shr ebx, 1
-	add ebx, 4
-	cmp ebx, 2000 ;2000个字符位置
+
+;正常的char才需要+1
+	cmp dl, 1
+	je not_add_loc
+	add ebx, 1
+not_add_loc:
+	cmp ebx, 1920 ;1920个字符位置
 	jb wc_o
 	mov ebx, 0
 wc_o:	mov [scr_loc], ebx
+	
+	call mov_cur
+	shl ebx, 1
+	mov [gs:ebx+1],ch
+write_char_ret:
+	pop edx
+	pop ebx
+	pop gs
+	ret
+
+mov_cur: ;移动光标，ebx保存有cur要设置的位置
+	push eax
+	push edx        
+
+	;--------------------------------------;
+        ;   VGA寄存器 低字节;
+        ;--------------------------------------;
+
+        mov     al, 0x0f               ; 光标位置低字节索引
+        mov     dx, 0x03D4             ; 写到CRT索引寄存器
+        out     dx, al
+
+        mov     al, bl                 ; 当前位置在EBX中，BL包含低字节，BH高字节
+        mov     dx, 0x03D5             ; 写到数据寄存器
+        out     dx, al                 ; 低字节
+
+        ;---------------------------------------;
+        ;   VGA 寄存器 高字节;
+        ;---------------------------------------;
+
+        xor     eax, eax
+        mov     al, 0x0e               ; 光标位置高字节索引
+        mov     dx, 0x03D4             ; 写到CRT索引寄存器
+        out     dx, al
+ 
+        mov     al, bh                 ; 当前位置在EBX中，BL包含低字节，BH高字节
+        mov     dx, 0x03D5             ; 写到数据寄存器
+        out     dx, al                 ; 高字节
+mov_cur_ret:
+	pop edx
+	pop eax
+        ret
+
+
+;输入一个字符al到bh行，bl列，ch为color
+write_char_by_pos:
+	push gs
+	push ebx
+	push edx
+
+	mov edx, SCRN_SEL
+	mov gs, dx
+
+	push bx
+	;计算屏幕位置，bh*80+bl+si
+	;mov edx, bh 
+	;multi edx, 80
+	mov edx, 0
+for_mult1:
+	cmp bh, 0
+	je end_mult1
+	add edx, 80
+	sub bh, 1
+	jmp for_mult1
+
+end_mult1:
+
+	mov bh, 0	
+	add dx, bx ; add bl
+
+	pop bx
+
+;	mov ax, dx
+;	call print_binary
+
+	
+	;print
+	shl edx, 1
+	mov [gs:edx], al
+	mov [gs:edx+1], ch
+
+
+	pop edx
 	pop ebx
 	pop gs
 	ret
@@ -133,6 +298,7 @@ print_binary:
 	push edx
 	push si
 	push di
+	push eax
 
 	;备份
 	mov di, ax	
@@ -178,11 +344,13 @@ end_mult:
 	cmp si, 16
 	jb repeat_pos
 
+	pop eax
 	pop di
 	pop si
 	pop edx
 	pop gs
 	ret
+
 
 align 4
 ignore_int:
@@ -197,18 +365,106 @@ ignore_int:
 	pop ds
 	iret
 
+mode:	db 0
+leds:	db 0
+e0:	db 0
+
 align 4
 keyboard_int:
-	push ds
 	push eax
-	mov eax, 0x10
-	mov ds,ax
-	mov eax, 'K'
-	mov ah, 0x0003
-	call write_char
-	pop eax
+	push ebx
+	push ecx
+	push edx
+	push ds
+	push es
+
+	mov eax, 0x10  ; 系统数据段
+	mov ds, ax
+	mov es, ax
+
+	in al, 0x60
+
+
+	cmp al, 0xe0
+	je set_e0
+	cmp al, 0xe1
+	je set_e1
+	;call [key_table+eax*4]
+	call do_self
+	mov cl, 0
+	mov [e0], cl
+
+e0_e1:
+	in al, 0x61
+	or al, 0x80 ; al 位7置位，禁止键盘工作
+	out 0x61, al ;使PPI PB7位置位
+	add al, 0x7F ; al位7复位	
+	out 0x61, al ; 使PPI PB7位复位，允许键盘工作
+	mov al, 0x20 ;向8259中断芯片发送EOI中断结束信号
+	out 0x20, al
+
+kb_ret:
+	pop es
 	pop ds
+	pop edx
+	pop ecx
+	pop ebx
+	pop eax
 	iret
+
+set_e0:
+	mov cl, 1
+	mov [e0],cl
+	jmp e0_e1
+set_e1:	
+	mov cl, 2
+	mov [e0],cl
+	jmp e0_e1
+
+do_self:
+	;剔除按键弹起的消息，第8位为1
+	mov bl, al
+	and bl, 0x80
+	cmp bl, 0
+	jne none
+
+	;word_count++
+	push edx
+	mov dx, [word_count]
+	inc dx
+	mov [word_count], dx
+	pop edx
+
+	mov ch, 0x07 ;screen color
+	mov bh, 24
+	mov bl, 15
+	call print_binary	
+	and ax, 0x007f
+
+
+	mov al, [key_map+eax]
+
+	call write_char
+
+;	mov ch, 0x02
+;	mov bh, 0
+;	mov bl, 0
+;	call write_char_by_pos	
+
+none:
+	ret
+
+;for macbook pro keyboard
+key_map:
+	db 0,27
+	db "1234567890-="
+	db 0x0e ;delete key
+	db " qwertyuiop[]"
+	db 0x1c ;return key
+	db " asdfghjkl;'"
+	db "  \zxcvbnm,./"
+	
+	times 128 db 0
 
 
 
@@ -286,7 +542,7 @@ current:
 	dd 0
 scr_loc: 
 	dd 0
-task0_count:
+word_count:
 	dd 0
 task1_count:
 	dd 0
@@ -354,26 +610,22 @@ tss1:	dd 0
 	times 128 dw 0
 krn_stk1:
 
-task0:
+task0: ;显示字母数量
 	mov eax, 0x17
 	mov ds, ax
-	mov ax, [task0_count]
-	add ax, 2
-	mov [task0_count], ax
+	mov ax, [word_count]
 	mov ch, 0x04 ;color
-	mov bh, 2
-	mov bl, 0
+	mov bh, 24 ;行
+	mov bl, 44 ;列
 	int 0x81
-	mov ecx, 0xfffff
-t0:	loop t0
 	jmp task0
 task1:
 	mov ax, [task1_count]
 	inc ax
 	mov [task1_count], ax
 	mov ch, 0x02 ;color
-	mov bh, 5
-	mov bl, 0
+	mov bh, 24 ;行
+	mov bl, 64 ;列
 	int 0x81
 	mov ecx, 0xfffff
 t1:	loop t1
