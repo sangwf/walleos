@@ -51,6 +51,15 @@ startup_32:
 	mov [esi], eax
 	mov [4+esi], edx
 
+	;clock interrupt: 显示时间
+	mov ax, clock_int
+	mov dx, 0xef00
+	mov ecx,  0x79
+	lea esi, [idt+ecx*8]
+	mov [esi], eax
+	mov [4+esi], edx
+
+
 	mov ax, system_interrupt
 	mov dx, 0xef00
 	mov ecx,  0x80
@@ -115,7 +124,7 @@ startup_32:
 	mov al, '.'
 	mov bl, 10
 	call write_char_by_pos
-	mov al, '1'
+	mov al, '2'
 	mov bl, 11
 	call write_char_by_pos
 	mov al, ':'
@@ -161,7 +170,7 @@ write_char:
 	mov dl, 0 ;作为特殊按键的标记
 	;处理回车按键0x1c
 	cmp al, 0x1c
-	jne delete_key
+	jne left_ctrl_key
 return_key:
 	push eax
 
@@ -176,6 +185,12 @@ return_key:
 
 	pop eax	
 	mov al, ' ' ;对于return key，直接输出一个空格
+left_ctrl_key:
+	cmp al, 0x1d
+	jne delete_key
+
+	mov al, ' '
+	mov dl, 1
 delete_key: ;处理delete按键
 	cmp al, 0x0e
 	jne normal_char
@@ -186,6 +201,7 @@ delete_key: ;处理delete按键
 not_delete:
 	mov al, ' '
 	mov dl, 1
+
 normal_char:	
 
 
@@ -365,6 +381,106 @@ ignore_int:
 	pop ds
 	iret
 
+
+align 4
+clock_int: ;显示时钟
+	push ds
+	push eax
+	;get time
+	;second
+	mov al, 0x00
+	out 0x70, al
+	in al, 0x71
+	mov [tm_sec], al
+
+	;miniute
+	mov al, 0x02
+	out 0x70, al
+	in al, 0x71
+	mov [tm_min], al
+
+	;hour
+	mov al, 0x04
+	out 0x70, al
+	in al, 0x71
+	mov [tm_hour], al
+
+
+	mov ch, 0x02 ;color
+	mov bh, 24 ;行
+
+	mov al, [tm_sec]
+	xor edx, edx
+	mov dl, al
+	shl dl, 4
+	shr dl, 4	
+
+	mov al, [key_map+1+edx]
+	mov bl, 79
+	call write_char_by_pos
+
+	mov al, [tm_sec]
+	xor edx, edx
+	mov dl, al
+	shr dl, 4	
+
+	mov al, [key_map+1+edx]
+	mov bl, 78
+	call write_char_by_pos
+
+	mov al, ':'
+	mov bl, 77
+	call write_char_by_pos
+
+	mov al, [tm_min]
+	xor edx, edx
+	mov dl, al
+	shl dl, 4
+	shr dl, 4	
+
+	mov al, [key_map+1+edx]
+	mov bl, 76
+	call write_char_by_pos
+
+	mov al, [tm_min]
+	xor edx, edx
+	mov dl, al
+	shr dl, 4	
+
+	mov al, [key_map+1+edx]
+	mov bl, 75
+	call write_char_by_pos
+
+	mov al, ':'
+	mov bl, 74
+	call write_char_by_pos
+
+	mov al, [tm_hour]
+	xor edx, edx
+	mov dl, al
+	shl dl, 4
+	shr dl, 4	
+
+	mov al, [key_map+1+edx]
+	mov bl, 73
+	call write_char_by_pos
+
+	mov al, [tm_hour]
+	xor edx, edx
+	mov dl, al
+	shr dl, 4	
+
+	mov al, [key_map+1+edx]
+	mov bl, 72
+	call write_char_by_pos
+
+
+	pop eax
+	pop ds
+	iret
+
+
+
 mode:	db 0
 leds:	db 0
 e0:	db 0
@@ -456,12 +572,13 @@ none:
 
 ;for macbook pro keyboard
 key_map:
-	db 0,27
-	db "1234567890-="
+	db 0
+	db "01234567890-="
 	db 0x0e ;delete key
 	db " qwertyuiop[]"
 	db 0x1c ;return key
-	db " asdfghjkl;'"
+	db 0x1d ;ctrl key(left)
+	db "asdfghjkl;'"
 	db "  \zxcvbnm,./"
 	
 	times 128 db 0
@@ -498,6 +615,8 @@ task0_cur:
 	mov dword [current], 0
 	jmp TSS0_SEL:0
 task1_cur:	
+
+
 	pop eax
 	pop ds
 	iret
@@ -544,8 +663,12 @@ scr_loc:
 	dd 0
 word_count:
 	dd 0
-task1_count:
-	dd 0
+tm_sec:
+	db 0
+tm_min:
+	db 0
+tm_hour:
+	db 0
 
 
 align 4
@@ -619,16 +742,8 @@ task0: ;显示字母数量
 	mov bl, 44 ;列
 	int 0x81
 	jmp task0
-task1:
-	mov ax, [task1_count]
-	inc ax
-	mov [task1_count], ax
-	mov ch, 0x02 ;color
-	mov bh, 24 ;行
-	mov bl, 64 ;列
-	int 0x81
-	mov ecx, 0xfffff
-t1:	loop t1
+task1: ;显示时间
+	int 0x79
 	jmp task1
 
 	times 128 dd 0
