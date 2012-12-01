@@ -124,7 +124,7 @@ startup_32:
 	mov al, '.'
 	mov bl, 10
 	call write_char_by_pos
-	mov al, '2'
+	mov al, '3'
 	mov bl, 11
 	call write_char_by_pos
 	mov al, ':'
@@ -551,6 +551,10 @@ do_self:
 	mov [word_count], dx
 	pop edx
 
+	push eax
+	call func_main
+	pop eax
+
 	mov ch, 0x07 ;screen color
 	mov bh, 24
 	mov bl, 15
@@ -748,5 +752,5 @@ task1: ;显示时间
 
 	times 128 dd 0
 usr_stk1:
-
+func_main:
 
