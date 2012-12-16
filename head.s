@@ -1,5 +1,6 @@
 LATCH equ 11930
 ;LATCH equ 59650 ; 11930*5
+KERNEL_SEL equ 0x08
 SCRN_SEL equ 0x18
 TSS0_SEL equ 0x20
 LDT0_SEL equ 0x28
@@ -75,6 +76,14 @@ startup_32:
 	mov [esi], eax
 	mov [4+esi], edx
 
+	;中断0x82
+	mov ax, print_hex_interrupt
+	mov dx, 0xef00
+	mov ecx,  0x82
+	lea esi, [idt+ecx*8]
+	mov [esi], eax
+	mov [4+esi], edx
+
 
 	pushfd
 	mov eax, 0xffffbfff
@@ -95,42 +104,52 @@ startup_32:
 	call write_char_by_pos
 
 	mov al, 'A'
-	mov bl, 1
+	inc bl
 	call write_char_by_pos
 	mov al, 'L'
-	mov bl, 2
+	inc bl
 	call write_char_by_pos
 	mov al, 'L'
-	mov bl, 3
+	inc bl
 	call write_char_by_pos
 	mov al, 'E'
-	mov bl, 4
+	inc bl
 	call write_char_by_pos
 	mov al, 'O'
-	mov bl, 5
+	inc bl
 	call write_char_by_pos
 	mov al, 'S'
-	mov bl, 6
+	inc bl
 	call write_char_by_pos
 	mov al, ' '
-	mov bl, 7
+	inc bl
 	call write_char_by_pos
 	mov al, 'V'
-	mov bl, 8
+	inc bl
 	call write_char_by_pos
 	mov al, '1'
-	mov bl, 9
+	inc bl
 	call write_char_by_pos
 	mov al, '.'
-	mov bl, 10
+	inc bl
 	call write_char_by_pos
-	mov al, '3'
-	mov bl, 11
+	mov al, '4'
+	inc bl
 	call write_char_by_pos
 	mov al, ':'
-	mov bl, 12
+	inc bl
 	call write_char_by_pos
 
+	;Test PCI Config
+	call getOneValidDevice	
+
+;	mov ch, 0x07 ;screen color
+;	mov bh, 24
+;	mov bl, 15
+;	mov dx, ax
+;	int 0x82
+;	call func_write_hex
+	
 	sti
 	push 0x17
 	push init_stack
@@ -160,9 +179,11 @@ rp_idt: mov [edi], eax
 	ret
 
 write_char:
-	push gs
+	push eax
 	push ebx
+	push ecx
 	push edx
+	push gs
 	mov ebx, SCRN_SEL
 	mov gs, bx
 	mov bx, [scr_loc]	
@@ -217,19 +238,92 @@ normal_char:
 	je not_add_loc
 	add ebx, 1
 not_add_loc:
-	cmp ebx, 1920 ;1920个字符位置
-	jb wc_o
-	mov ebx, 0
-wc_o:	mov [scr_loc], ebx
-	
+	call func_update_location
 	call mov_cur
 	shl ebx, 1
 	mov [gs:ebx+1],ch
 write_char_ret:
-	pop edx
-	pop ebx
 	pop gs
+	pop edx
+	pop ecx
+	pop ebx
+	pop eax
 	ret
+
+;打印dx为16进制数，" 0x**** "，共占8个位置
+func_write_hex:
+	push eax
+	push ebx
+	push ds
+	mov eax, 0x10  ; 系统数据段
+	mov ds, ax
+
+	mov al, ' '
+	call func_write_normal_char
+	mov al, '0'
+	call func_write_normal_char
+	mov al, 'x'
+	call func_write_normal_char
+
+	xor eax, 0
+	mov al, dh
+	shr al, 4
+	mov al, [hex_map+eax]
+	call func_write_normal_char
+	xor eax, 0
+	mov al, dh
+	shl al, 4
+	shr al, 4
+	mov al, [hex_map+eax]
+	call func_write_normal_char
+	xor eax, 0
+	mov al, dl
+	shr al, 4
+	mov al, [hex_map+eax]
+	call func_write_normal_char
+	xor eax, 0
+	mov al, dl
+	shl al, 4
+	shr al, 4
+	mov al, [hex_map+eax]
+	call func_write_normal_char
+
+	mov al, ' '
+	call func_write_normal_char
+	pop ds
+	pop ebx
+	pop eax
+	ret
+;打印一个常规字符al到屏幕
+func_write_normal_char:
+	push eax
+	push gs
+	mov ebx, SCRN_SEL
+	mov gs, bx
+	mov bx, [scr_loc]	
+
+	shl ebx, 1
+	mov [gs:ebx],al
+	; color
+	mov [gs:ebx+1],ch
+	shr ebx, 1
+	add ebx, 1
+	call func_update_location
+	call mov_cur
+	pop gs
+	pop eax
+	ret
+
+
+;更新位置偏移
+;ebx为新位置请求
+func_update_location:
+	cmp ebx, 1920 ;1920个字符位置
+	jb  mark_not_overflow
+	mov ebx, 0
+mark_not_overflow: mov [scr_loc], ebx
+	ret
+
 
 mov_cur: ;移动光标，ebx保存有cur要设置的位置
 	push eax
@@ -274,28 +368,18 @@ write_char_by_pos:
 	mov edx, SCRN_SEL
 	mov gs, dx
 
+	push ax
 	push bx
-	;计算屏幕位置，bh*80+bl+si
-	;mov edx, bh 
-	;multi edx, 80
-	mov edx, 0
-for_mult1:
-	cmp bh, 0
-	je end_mult1
-	add edx, 80
-	sub bh, 1
-	jmp for_mult1
-
-end_mult1:
+	;计算屏幕位置，bh*80+bl
+	mov al, 80
+	mul bh
+	mov dx, ax
 
 	mov bh, 0	
 	add dx, bx ; add bl
 
 	pop bx
-
-;	mov ax, dx
-;	call print_binary
-
+	pop ax
 	
 	;print
 	shl edx, 1
@@ -329,25 +413,21 @@ repeat_pos:
 	mov cl, dl
 	shl ax, cl
 	shr ax, 15 ;移到最右侧1位
-	;计算屏幕位置，bh*80+bl+si
-	;mov edx, bh 
-	;multi edx, 80
-	push bx
-	mov edx, 0
-for_mult:
-	cmp bh, 0
-	je end_mult
-	add edx, 80
-	sub bh, 1
-	jmp for_mult
 
-end_mult:
+	;计算屏幕位置，bh*80+bl+si
+	push ax
+	push bx
+
+	mov al, 80
+	mul bh
+	mov dx, ax
 
 	mov bh, 0	
 	add dx, bx ; add bl
 	add dx, si ; dx存放位置
 
 	pop bx
+	pop ax
 
 	;print
 	shl edx, 1
@@ -367,6 +447,75 @@ end_mult:
 	pop gs
 	ret
 
+;打印一个整数ax到bh行，bl列, 颜色信息存放在ch
+;16进制
+print_hex:
+	push eax
+	push ebx
+	push ecx
+	push edx
+	push si
+	push di
+	push gs
+	;备份
+	mov di, ax	
+
+	;set gs = SCRN_SEL
+	mov edx, SCRN_SEL
+	mov gs, dx
+
+	mov si, 0 ;共4位，从左向右打印
+repeat_pos2:
+	mov ax, di ;还原ax
+
+	push ax
+	mov al, 4
+	mul si
+	mov cl, al
+	pop ax
+
+	shl ax, cl
+	shr ax, 12 ;移到最右侧1位
+
+	;计算屏幕位置，bh*80+bl+si
+	push ax
+	push bx
+
+	mov al, 80
+	mul bh
+	mov dx, ax
+
+	mov bh, 0	
+	add dx, bx ; add bl
+	add dx, si ; si存放偏移
+
+	pop bx
+	pop ax
+
+	;print
+	shl edx, 1
+	push ebx
+	mov ebx, 0
+	mov bl, al
+	mov al, [hex_map+ebx]
+	mov [gs:edx], al
+	mov [gs:edx+1], ch
+	pop ebx	
+
+	inc si
+	cmp si, 4
+	jb repeat_pos2
+
+	pop gs
+	pop di
+	pop si
+	pop edx
+	pop ecx
+	pop ebx
+	pop eax	
+	ret
+hex_map:
+	db "0123456789ABCDEF"
 
 align 4
 ignore_int:
@@ -551,10 +700,6 @@ do_self:
 	mov [word_count], dx
 	pop edx
 
-	push eax
-	call func_main
-	pop eax
-
 	mov ch, 0x07 ;screen color
 	mov bh, 24
 	mov bl, 15
@@ -659,6 +804,22 @@ print_bin_interrupt:
 	pop ds
 	iret
 
+align 4
+print_hex_interrupt:
+	push ds
+	push edx
+	push ecx
+	push ebx
+	push eax
+	;print dx
+	call func_write_hex
+	pop eax
+	pop ebx
+	pop ecx
+	pop edx
+	pop ds
+	iret
+
 
 
 current: 
@@ -752,5 +913,5 @@ task1: ;显示时间
 
 	times 128 dd 0
 usr_stk1:
-func_main:
-
+;c function
+getOneValidDevice:
