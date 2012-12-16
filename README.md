@@ -2,6 +2,8 @@ Walle OS
 =======
 by sangwf
 
+20121216 walleos v1.4release，实现了获取PCI配置信息。 效果图：http://pan.baidu.com/share/link?shareid=142163&uk=2667868178
+
 20121201 walleos v1.3 release. 效果图：http://pan.baidu.com/share/link?shareid=130839&uk=2667868178
 
 20121009 walleos v1.2 release. 效果图：http://pan.baidu.com/share/link?shareid=80663&uk=2667868178
