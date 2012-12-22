@@ -12,6 +12,11 @@ __asm__ volatile ("out %%eax, %%dx"::"d" (port), "a" (addr) ); \
 __asm__ volatile ("int $0x82"::"d" (value) ); \
 })
 
+#define print_return() ({ \
+__asm__ volatile ("int $0x83"::); \
+})
+
+
 
 #define PCI_CONFIG_READ_WORD(lbus, lslot, lfunc, offset, address, value) \
 ({ \
@@ -47,8 +52,12 @@ unsigned short getOneValidDevice(void)
 			if(vendor != 0xFFFF) {
 				/* device = pciConfigReadWord(bus, slot, 0, 2); */
 				PCI_CONFIG_READ_WORD(lbus, lslot, lfunc, 2, address, device);	
+				print_short((unsigned short)lbus);
+				print_short((unsigned short)lslot);
+				print_short((unsigned short)lfunc);
 				print_short(device);
 				print_short(vendor);
+				print_return();
 				/* return vendor; */
 			}
 		}

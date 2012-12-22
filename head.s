@@ -84,6 +84,14 @@ startup_32:
 	mov [esi], eax
 	mov [4+esi], edx
 
+	;中断0x83
+	mov ax, print_return_interrupt
+	mov dx, 0xef00
+	mov ecx,  0x83
+	lea esi, [idt+ecx*8]
+	mov [esi], eax
+	mov [4+esi], edx
+
 
 	pushfd
 	mov eax, 0xffffbfff
@@ -98,57 +106,16 @@ startup_32:
 	;DEBUG:
 	mov ch, 0x02
 	mov bh, 24
-
-	mov al, 'W'
 	mov bl, 0
-	call write_char_by_pos
+	lea edx, [STR_VERSION]
+	call func_write_string_by_pos
 
-	mov al, 'A'
-	inc bl
-	call write_char_by_pos
-	mov al, 'L'
-	inc bl
-	call write_char_by_pos
-	mov al, 'L'
-	inc bl
-	call write_char_by_pos
-	mov al, 'E'
-	inc bl
-	call write_char_by_pos
-	mov al, 'O'
-	inc bl
-	call write_char_by_pos
-	mov al, 'S'
-	inc bl
-	call write_char_by_pos
-	mov al, ' '
-	inc bl
-	call write_char_by_pos
-	mov al, 'V'
-	inc bl
-	call write_char_by_pos
-	mov al, '1'
-	inc bl
-	call write_char_by_pos
-	mov al, '.'
-	inc bl
-	call write_char_by_pos
-	mov al, '4'
-	inc bl
-	call write_char_by_pos
-	mov al, ':'
-	inc bl
-	call write_char_by_pos
+	lea edx, [STR_PCI_INFO]
+	call func_write_string
+	call func_write_return
 
 	;Test PCI Config
 	call getOneValidDevice	
-
-;	mov ch, 0x07 ;screen color
-;	mov bh, 24
-;	mov bl, 15
-;	mov dx, ax
-;	int 0x82
-;	call func_write_hex
 	
 	sti
 	push 0x17
@@ -239,7 +206,6 @@ normal_char:
 	add ebx, 1
 not_add_loc:
 	call func_update_location
-	call mov_cur
 	shl ebx, 1
 	mov [gs:ebx+1],ch
 write_char_ret:
@@ -249,6 +215,35 @@ write_char_ret:
 	pop ebx
 	pop eax
 	ret
+
+;回车换行
+func_write_return:
+	push eax
+	push ebx
+	push ecx
+	push edx
+	push gs
+	mov ebx, SCRN_SEL
+	mov gs, bx
+	mov bx, [scr_loc] ;bx = location	
+
+	mov ax, bx
+	mov cl, 80
+	div cl ;al商，ah余数
+	sub cl, ah
+	mov dl, cl
+	mov dh, 0
+	add bx, dx
+;	sub bx, 1
+
+	call func_update_location
+	pop gs
+	pop edx
+	pop ecx
+	pop ebx
+	pop eax
+	ret
+
 
 ;打印dx为16进制数，" 0x**** "，共占8个位置
 func_write_hex:
@@ -309,7 +304,6 @@ func_write_normal_char:
 	shr ebx, 1
 	add ebx, 1
 	call func_update_location
-	call mov_cur
 	pop gs
 	pop eax
 	ret
@@ -322,10 +316,11 @@ func_update_location:
 	jb  mark_not_overflow
 	mov ebx, 0
 mark_not_overflow: mov [scr_loc], ebx
+	call func_mov_cur
 	ret
 
 
-mov_cur: ;移动光标，ebx保存有cur要设置的位置
+func_mov_cur: ;移动光标，ebx保存有cur要设置的位置
 	push eax
 	push edx        
 
@@ -358,9 +353,56 @@ mov_cur_ret:
 	pop eax
         ret
 
+;输入edx所存以'\0'结尾的字符串到屏幕，ch为color
+func_write_string:
+	push eax
+	push ebx
+	push edx
+
+	mov ax, [scr_loc]	
+	mov bl, 80
+	div bl ;al商，ah余数
+
+	mov bh, al
+	mov bl, ah
+	call func_write_string_by_pos
+
+	pop edx
+	pop ebx
+	pop eax
+	ret
+
+;输入edx所存以'\0'结尾的字符串到bh行，bl列，ch为color
+func_write_string_by_pos:
+	push eax
+	push ebx
+	
+mark_wsbp_while:
+	cmp byte [edx], 0
+	je mark_wsbp_ret
+	mov al, [edx]
+	call func_write_char_by_pos
+	inc bl
+	;处理换行问题
+	cmp bl, 80
+	jne mark_wsbp_next
+	mov bl, 0
+	inc bh
+	cmp bh, 24
+	jne mark_wsbp_next
+	mov bh, 0
+mark_wsbp_next:
+	inc edx
+	jmp mark_wsbp_while
+	
+mark_wsbp_ret:
+	pop ebx
+	pop eax
+	ret
+
 
 ;输入一个字符al到bh行，bl列，ch为color
-write_char_by_pos:
+func_write_char_by_pos:
 	push gs
 	push ebx
 	push edx
@@ -566,7 +608,7 @@ clock_int: ;显示时钟
 
 	mov al, [key_map+1+edx]
 	mov bl, 79
-	call write_char_by_pos
+	call func_write_char_by_pos
 
 	mov al, [tm_sec]
 	xor edx, edx
@@ -575,11 +617,11 @@ clock_int: ;显示时钟
 
 	mov al, [key_map+1+edx]
 	mov bl, 78
-	call write_char_by_pos
+	call func_write_char_by_pos
 
 	mov al, ':'
 	mov bl, 77
-	call write_char_by_pos
+	call func_write_char_by_pos
 
 	mov al, [tm_min]
 	xor edx, edx
@@ -589,7 +631,7 @@ clock_int: ;显示时钟
 
 	mov al, [key_map+1+edx]
 	mov bl, 76
-	call write_char_by_pos
+	call func_write_char_by_pos
 
 	mov al, [tm_min]
 	xor edx, edx
@@ -598,11 +640,11 @@ clock_int: ;显示时钟
 
 	mov al, [key_map+1+edx]
 	mov bl, 75
-	call write_char_by_pos
+	call func_write_char_by_pos
 
 	mov al, ':'
 	mov bl, 74
-	call write_char_by_pos
+	call func_write_char_by_pos
 
 	mov al, [tm_hour]
 	xor edx, edx
@@ -612,7 +654,7 @@ clock_int: ;显示时钟
 
 	mov al, [key_map+1+edx]
 	mov bl, 73
-	call write_char_by_pos
+	call func_write_char_by_pos
 
 	mov al, [tm_hour]
 	xor edx, edx
@@ -621,7 +663,7 @@ clock_int: ;显示时钟
 
 	mov al, [key_map+1+edx]
 	mov bl, 72
-	call write_char_by_pos
+	call func_write_char_by_pos
 
 
 	pop eax
@@ -714,7 +756,7 @@ do_self:
 ;	mov ch, 0x02
 ;	mov bh, 0
 ;	mov bl, 0
-;	call write_char_by_pos	
+;	call func_write_char_by_pos	
 
 none:
 	ret
@@ -820,7 +862,19 @@ print_hex_interrupt:
 	pop ds
 	iret
 
+align 4
+print_return_interrupt:
+	call func_write_return
+	iret
 
+
+STR_PCI_INFO:
+	db " BUS     SLOT    FUNC    DEVICE  VENDOR   "
+	db 0
+
+STR_VERSION:
+	db "WALLEOS V1.5: "
+	db 0
 
 current: 
 	dd 0
