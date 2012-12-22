@@ -2,7 +2,9 @@ Walle OS
 =======
 by sangwf
 
-20121216 walleos v1.4release，实现了获取PCI配置信息。 效果图：http://pan.baidu.com/share/link?shareid=142163&uk=2667868178
+20121222 walleos v1.5 release, 增加字符串打印函数。效果图：http://pan.baidu.com/share/link?shareid=147222&uk=2667868178&third=0
+
+20121216 walleos v1.4 release，实现了获取PCI配置信息。 效果图：http://pan.baidu.com/share/link?shareid=142163&uk=2667868178
 
 20121201 walleos v1.3 release. 效果图：http://pan.baidu.com/share/link?shareid=130839&uk=2667868178
 
