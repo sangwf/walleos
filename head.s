@@ -92,6 +92,14 @@ startup_32:
 	mov [esi], eax
 	mov [4+esi], edx
 
+	;中断0x84
+	mov ax, print_string_interrupt
+	mov dx, 0xef00
+	mov ecx,  0x84
+	lea esi, [idt+ecx*8]
+	mov [esi], eax
+	mov [4+esi], edx
+
 
 	pushfd
 	mov eax, 0xffffbfff
@@ -867,9 +875,16 @@ print_return_interrupt:
 	call func_write_return
 	iret
 
+align 4
+print_string_interrupt:
+	mov ch, 0x02 ;color
+	call func_write_string
+	iret
+
+
 
 STR_PCI_INFO:
-	db " BUS     SLOT    FUNC    DEVICE  VENDOR   "
+	db " BUS     SLOT    FUNC    DEVICE  VENDOR  SUB|CLASS REV|PROGIF"
 	db 0
 
 STR_VERSION:

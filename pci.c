@@ -12,6 +12,11 @@ __asm__ volatile ("out %%eax, %%dx"::"d" (port), "a" (addr) ); \
 __asm__ volatile ("int $0x82"::"d" (value) ); \
 })
 
+#define print_string(address) ({ \
+__asm__ volatile ("int $0x84"::"d" (address) ); \
+})
+
+
 #define print_return() ({ \
 __asm__ volatile ("int $0x83"::); \
 })
@@ -25,7 +30,6 @@ address = (unsigned long)((lbus << 16) | (lslot << 11) | \
 outd(0xCF8, address); \
 value = (unsigned short)((ind(0xCFC) >> ((offset & 2) * 8)) & 0xffff); \
 }) 
- 
 
 
 unsigned short pci_config_read_word(unsigned short bus, unsigned short slot,
@@ -44,21 +48,37 @@ unsigned short getOneValidDevice(void)
 	unsigned short device;
 	unsigned short vendor;
 	unsigned long address;
+	unsigned short class_sub;
+	unsigned short progif_rev;
+	char info[] = "Yes, I find the network card!";
 	
-	for(lbus =0; lbus < 256; lbus++) {
-		for(lslot = 0; lslot < 32; lslot++) {
-			PCI_CONFIG_READ_WORD(lbus, lslot, lfunc, 0, address, vendor);	
-			/*vendor = pciConfigReadWord(bus, slot, 0, 0);*/
-			if(vendor != 0xFFFF) {
-				/* device = pciConfigReadWord(bus, slot, 0, 2); */
-				PCI_CONFIG_READ_WORD(lbus, lslot, lfunc, 2, address, device);	
-				print_short((unsigned short)lbus);
-				print_short((unsigned short)lslot);
-				print_short((unsigned short)lfunc);
-				print_short(device);
-				print_short(vendor);
-				print_return();
-				/* return vendor; */
+	for (lbus =0; lbus < 256; lbus++) {
+		for (lslot = 0; lslot < 32; lslot++) {
+			for (lfunc = 0; lfunc < 8; lfunc++) {
+				PCI_CONFIG_READ_WORD(lbus, lslot, lfunc, 0, address, vendor);	
+				/*vendor = pciConfigReadWord(bus, slot, 0, 0);*/
+				if(vendor != 0xFFFF) {
+					/* device = pciConfigReadWord(bus, slot, 0, 2); */
+					PCI_CONFIG_READ_WORD(lbus, lslot, lfunc, 2, address, device);	
+					/* Class code|subclass */
+					PCI_CONFIG_READ_WORD(lbus, lslot, lfunc, 8, address, class_sub);	
+					/* Prog IF| Revision ID */
+					PCI_CONFIG_READ_WORD(lbus, lslot, lfunc, 10, address, progif_rev);	
+					/* filter for network card: class code = 0x10 && sub class = 0x00 */
+					if ((class_sub == 0x0010)&&((progif_rev&0x00FF)==0x00000)) {
+						print_short((unsigned short)lbus);
+						print_short((unsigned short)lslot);
+						print_short((unsigned short)lfunc);
+						print_short(device);
+						print_short(vendor);
+						print_short(class_sub);
+						print_short(progif_rev);
+						print_return();
+						print_string(info);
+						print_return();
+					}
+					/* return vendor; */
+				}
 			}
 		}
 	}
