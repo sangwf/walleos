@@ -89,6 +89,7 @@ int main(int argc, char* argv[])
 				fd_out = open(sect.sectname, O_CREAT|O_TRUNC|O_WRONLY);
 				if(fd_out<0) {
 					FILE_ERROR(fd, "create %s file failed.\n", sect.sectname);
+					close(fd_out);
 					return -1;
 				}
 				write(fd_out, buf, sect.size);
