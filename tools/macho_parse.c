@@ -4,6 +4,8 @@
 #include<sys/stat.h>
 #include<fcntl.h>
 
+#define FILE_ERROR(fd, format, err) { close(fd); printf(format, err); }
+
 int main(int argc, char* argv[])
 {
 	int fd = -1;
@@ -32,7 +34,7 @@ int main(int argc, char* argv[])
 
 	ret = read(fd, &head, sizeof(head));
 	if(ret != sizeof(head)) {
-		printf("read file failed\n");
+		FILE_ERROR(fd, "%s", "read file failed\n");
 		return -1;
 	}
 
@@ -40,7 +42,7 @@ int main(int argc, char* argv[])
 		head.magic, head.filetype, head.ncmds, head.sizeofcmds, head.flags);
 
 	if(head.magic != MH_MAGIC) {
-		printf("[ERROR] This program just supports 32-bit mach-o file, please use [gcc -m32] for compile. \n");
+		FILE_ERROR(fd, "%s", "[ERROR] This program just supports 32-bit mach-o file, please use [gcc -m32] for compile.\n");
 		return -1;
 	}
 
@@ -53,7 +55,7 @@ int main(int argc, char* argv[])
 	for(i=0; i<head.ncmds; i++) {
 		ret = read(fd, &cmd, sizeof(cmd));
 		if(ret != sizeof(cmd)) {
-			printf("read[%d] cmd failed\n", i);
+			FILE_ERROR(fd, "read[%d] cmd failed\n", i);
 			return -1;
 		}
 		printf("NO: %d cmd:%d cmdsize:%d \n",i, cmd.cmd, cmd.cmdsize);
@@ -61,7 +63,7 @@ int main(int argc, char* argv[])
 			lseek(fd, -sizeof(cmd), SEEK_CUR);
 			ret = read(fd, &seg_cmd, sizeof(seg_cmd));
 			if(ret != sizeof(seg_cmd)) {
-				printf("read seg cmd failed\n");
+				FILE_ERROR(fd, "%s", "read seg cmd failed\n");
 				return -1;
 			}
 			printf("segname: %s nsects: %u\n", 
@@ -69,7 +71,7 @@ int main(int argc, char* argv[])
 			for(isect=0; isect<seg_cmd.nsects; isect++) {
 				ret = read(fd, &sect, sizeof(sect));
 				if(ret != sizeof(sect)) {
-					printf("read section[%d] failed\n", isect);
+					FILE_ERROR(fd, "read section[%d] failed\n", isect);
 					return -1;
 				}
 				printf("SECT NO: %d sectname: %s segname: %s addr: %x size: %u offset: %d reloff: %d nreloc: %d\n", 
@@ -80,13 +82,13 @@ int main(int argc, char* argv[])
 				lseek(fd, sect.offset, SEEK_SET);
 				ret = read(fd, buf, sect.size);
 				if(ret != sect.size) {
-					printf("read section[%d]'data failed\n", isect);
+					FILE_ERROR(fd, "read section[%d]'data failed\n", isect);
 					return -1;
 				}
 
 				fd_out = open(sect.sectname, O_CREAT|O_TRUNC|O_WRONLY);
 				if(fd_out<0) {
-					printf("create %s file failed.\n", sect.sectname);
+					FILE_ERROR(fd, "create %s file failed.\n", sect.sectname);
 					return -1;
 				}
 				write(fd_out, buf, sect.size);
