@@ -7,10 +7,13 @@ LDT0_SEL equ 0x28
 TSS1_SEL equ 0x30
 LDT1_SEL equ 0x38
 
+;C编译后的代码入口处
+C_ENTER equ 0x00001c80
+
 bits 32
 ;mov ax, 0x4344
 
-startup_32:
+start:
 	mov eax, 0x10 ;指向系统段
 	mov ds, ax
 
@@ -123,8 +126,8 @@ startup_32:
 	call func_write_return
 
 	;Test PCI Config
-	call getOneValidDevice	
-	
+	call C_ENTER	
+
 	sti
 	push 0x17
 	push init_stack
@@ -888,7 +891,7 @@ STR_PCI_INFO:
 	db 0
 
 STR_VERSION:
-	db "WALLEOS V1.5: "
+	db "WALLEOS V1.6: "
 	db 0
 
 current: 
@@ -982,5 +985,3 @@ task1: ;显示时间
 
 	times 128 dd 0
 usr_stk1:
-;c function
-getOneValidDevice:

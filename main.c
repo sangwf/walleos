@@ -1,4 +1,8 @@
+#include "sysfunc.h"
+#include "pci.h"
+
 int main()
 {
-	return 'M';
+    getOneValidDevice();
+	return 1;
 }

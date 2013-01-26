@@ -21,6 +21,10 @@ __asm__ volatile ("int $0x84"::"d" (address) ); \
 __asm__ volatile ("int $0x83"::); \
 })
 
+#define hlt() ({ \
+__asm__ volatile ("hlt"::); \
+})
+
 
 
 #define PCI_CONFIG_READ_WORD(lbus, lslot, lfunc, offset, address, value) \
@@ -31,12 +35,6 @@ outd(0xCF8, address); \
 value = (unsigned short)((ind(0xCFC) >> ((offset & 2) * 8)) & 0xffff); \
 }) 
 
-
-unsigned short pci_config_read_word(unsigned short bus, unsigned short slot,
-					unsigned short func, unsigned short offset);
-
-unsigned short pciGetDeviceAndVendor(unsigned short bus, unsigned short slot
-				, unsigned short* p_device);
 /*
 func: get a valid device
 */
@@ -50,8 +48,7 @@ unsigned short getOneValidDevice(void)
 	unsigned long address;
 	unsigned short class_sub;
 	unsigned short progif_rev;
-	char info[] = "Yes, I find the network card!";
-	
+
 	for (lbus =0; lbus < 256; lbus++) {
 		for (lslot = 0; lslot < 32; lslot++) {
 			for (lfunc = 0; lfunc < 8; lfunc++) {
@@ -66,6 +63,7 @@ unsigned short getOneValidDevice(void)
 					PCI_CONFIG_READ_WORD(lbus, lslot, lfunc, 10, address, progif_rev);	
 					/* filter for network card: class code = 0x10 && sub class = 0x00 */
 					if ((class_sub == 0x0010)&&((progif_rev&0x00FF)==0x00000)) {
+						//if ((class_sub == 0x0010)) {
 						print_short((unsigned short)lbus);
 						print_short((unsigned short)lslot);
 						print_short((unsigned short)lfunc);
@@ -74,57 +72,16 @@ unsigned short getOneValidDevice(void)
 						print_short(class_sub);
 						print_short(progif_rev);
 						print_return();
-						print_string(info);
+						print_string("--this is the net card!");
 						print_return();
 					}
 					/* return vendor; */
+					}
 				}
 			}
 		}
+		print_string("today is 20130126, I can print string in C code.");
+		print_return();
+
+		return 0;
 	}
-	
-	return 0;
-}
-
-
-/*
-func: check pci vendor
-*/
-__inline__ __attribute__((always_inline)) unsigned short pciGetDeviceAndVendor(unsigned short bus, unsigned short slot
-				, unsigned short* p_device)
-{
-    unsigned short vendor;
-    /* try and read the first configuration register. Since there are no */
-    /* vendors that == 0xFFFF, it must be a non-existent device. */
-    if ((vendor = pciConfigReadWord(bus,slot,0,0)) != 0xFFFF) {
-       *p_device = pciConfigReadWord(bus,slot,0,2);
-    } 
-
-    return (vendor);
-}
-
-/* 
-func: read pci config info
-*/
-__inline__ __attribute__((always_inline)) unsigned short pci_config_read_word(unsigned short bus, unsigned short slot,
-					unsigned short func, unsigned short offset)
-{
-	unsigned long address;
-	unsigned long lbus = (unsigned long)bus;
-	unsigned long lslot = (unsigned long)slot;
-	unsigned long lfunc = (unsigned long)func;
-	unsigned short tmp = 0;
-
-	/* create configuration address */
-	/* | ((unsigned int)0x80000000)) - for set bit-31 to the value of 1*/
-	address = (unsigned long)((lbus << 16) | (lslot << 11) |
-			(lfunc << 8) | (offset & 0xfc) | ((unsigned int)0x80000000));
-
-	/* write out the address */
-	outd(0xCF8, address);
-	/* read in the data */
-	/* ((offset & 2) * 8) = 0 will choose the first word of the 32 bits register */
-	tmp = (unsigned short)((ind(0xCFC) >> ((offset & 2) * 8)) & 0xffff);
-	return (tmp);
-}
-
