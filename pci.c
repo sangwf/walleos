@@ -83,5 +83,6 @@ unsigned short getOneValidDevice(void)
 		print_string("today is 20130126, I can print string in C code.");
 		print_return();
 
+		//hlt();
 		return 0;
 	}

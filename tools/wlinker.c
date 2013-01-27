@@ -1,8 +1,10 @@
 #include<mach-o/loader.h>
 #include<stdio.h>
+#include<stdlib.h>
 #include<sys/types.h>
 #include<sys/stat.h>
 #include<fcntl.h>
+#include <errno.h> 
 
 #define FILE_ERROR(fd, fmt, err...) { close(fd); printf(fmt, ##err); }
 
@@ -35,25 +37,12 @@ int main(int argc, char* argv[])
 	int head_size = -1;
 	char system_image[102400]; // 100K
 	int i_nsyms = 0;
+	unsigned int start_address = 0;
 
 	if (argc != 3) {
-		printf("Use: %s [head.bin filename] [mach-o filename]\n", argv[0]);
+		printf("Use: %s [head.s filename] [mach-o filename]\n", argv[0]);
 		return -1;
 	}
-
-	// load head.bin to memory and get the head size
-	fd_head = open(argv[1], O_RDONLY);
-	if (fd_head < 0) {
-		printf("open head file failed\n");
-		return -1;
-	}
-
-	head_size = read(fd_head, system_image, sizeof(system_image));
-	if (head_size <= 0) {
-		FILE_ERROR(fd_head, "read head.bin failed(%d)\n", head_size);
-		return -1;
-	}
-
 	// deal system file
 	fd = open(argv[2], O_RDONLY);
 	if(fd < 0) {
@@ -101,13 +90,19 @@ int main(int argc, char* argv[])
 				seg_cmd.segname, seg_cmd.nsects);
 			for (isect = 1; isect <= seg_cmd.nsects; isect++) {
 				ret = read(fd, &sect, sizeof(sect));
-				if(ret != sizeof(sect)) {
+				if (ret != sizeof(sect)) {
 					FILE_ERROR(fd, "read section[%d] failed\n", isect);
 					return -1;
 				}
 				printf("SECT NO: %d sectname: %s segname: %s addr: %x size: %u offset: %d reloff: %d nreloc: %d\n", 
 					isect, sect.sectname, sect.segname, sect.addr, sect.size, sect.offset, sect.reloff, sect.nreloc);
 				
+				if (strcmp(sect.sectname, "__text") == 0) {
+					//find main address
+					start_address = sect.addr + 0x40;
+					printf("Program Start Address: %x\n", start_address);
+				}
+
 				//load section data
 				f_pos = lseek(fd, 0, SEEK_CUR);
 				lseek(fd, sect.offset, SEEK_SET);
@@ -169,6 +164,30 @@ int main(int argc, char* argv[])
 
 	close(fd);
 	fd = -1;
+
+	// compile head.s with start_address
+	snprintf(buf, sizeof(buf), "/usr/bin/nasm -DC_ENTER=0x%x -fbin %s -ohead.bin",
+				start_address, argv[1]);
+	printf("system: %s \n", buf);
+	ret = system(buf);
+	if (ret < 0) {
+		printf("system: failed ret(%d)\n", ret); 
+		return -1;
+	}
+
+	// load head.bin to memory and get the head size
+	fd_head = open("head.bin", O_RDONLY);
+	if (fd_head < 0) {
+		printf("open head file failed\n");
+		return -1;
+	}
+
+	head_size = read(fd_head, system_image, sizeof(system_image));
+	if (head_size <= 0) {
+		FILE_ERROR(fd_head, "read head.bin failed(%d)\n", head_size);
+		return -1;
+	}
+
 
 	//write to system.bin
 	fd_out = open("system.bin", O_CREAT|O_TRUNC|O_WRONLY, 00700);

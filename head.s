@@ -8,7 +8,7 @@ TSS1_SEL equ 0x30
 LDT1_SEL equ 0x38
 
 ;C编译后的代码入口处
-C_ENTER equ 0x00001c80
+;C_ENTER equ 0x00001c80
 
 bits 32
 ;mov ax, 0x4344
@@ -971,16 +971,18 @@ tss1:	dd 0
 krn_stk1:
 
 task0: ;显示字母数量
-	mov eax, 0x17
-	mov ds, ax
-	mov ax, [word_count]
-	mov ch, 0x04 ;color
-	mov bh, 24 ;行
-	mov bl, 44 ;列
-	int 0x81
+;	mov eax, 0x17
+;	mov ds, ax
+;	mov ax, [word_count]
+;	mov ch, 0x04 ;color
+;	mov bh, 24 ;行
+;	mov bl, 44 ;列
+;	int 0x81
+	nop
 	jmp task0
 task1: ;显示时间
 	int 0x79
+	nop
 	jmp task1
 
 	times 128 dd 0
