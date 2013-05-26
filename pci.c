@@ -12,6 +12,11 @@ __asm__ volatile ("out %%eax, %%dx"::"d" (port), "a" (addr) ); \
 __asm__ volatile ("int $0x82"::"d" (value) ); \
 })
 
+#define print_long(value) ({ \
+__asm__ volatile ("int $0x85"::"d" (value) ); \
+})
+
+
 #define print_string(address) ({ \
 __asm__ volatile ("int $0x84"::"d" (address) ); \
 })
@@ -35,6 +40,15 @@ outd(0xCF8, address); \
 value = (unsigned short)((ind(0xCFC) >> ((offset & 2) * 8)) & 0xffff); \
 }) 
 
+#define PCI_CONFIG_READ_DWORD(lbus, lslot, lfunc, offset, address, value) \
+({ \
+address = (unsigned long)((lbus << 16) | (lslot << 11) | \
+                         (lfunc << 8) | (offset & 0xfc) | ((unsigned int)0x80000000));  \
+outd(0xCF8, address); \
+value = ind(0xCFC); \
+}) 
+
+
 /*
 func: get a valid device
 */
@@ -48,6 +62,8 @@ unsigned short getOneValidDevice(void)
 	unsigned long address;
 	unsigned short class_sub;
 	unsigned short progif_rev;
+	unsigned short pin_line;
+	unsigned long base_address;
 
 	for (lbus =0; lbus < 256; lbus++) {
 		for (lslot = 0; lslot < 32; lslot++) {
@@ -61,6 +77,9 @@ unsigned short getOneValidDevice(void)
 					PCI_CONFIG_READ_WORD(lbus, lslot, lfunc, 8, address, class_sub);	
 					/* Prog IF| Revision ID */
 					PCI_CONFIG_READ_WORD(lbus, lslot, lfunc, 10, address, progif_rev);	
+					/* Interrupt PIN | Interrupt Line */
+					PCI_CONFIG_READ_WORD(lbus, lslot, lfunc, 0x3e, address, pin_line);
+
 					/* filter for network card: class code = 0x10 && sub class = 0x00 */
 					if ((class_sub == 0x0010)&&((progif_rev&0x00FF)==0x00000)) {
 						//if ((class_sub == 0x0010)) {
@@ -71,8 +90,30 @@ unsigned short getOneValidDevice(void)
 						print_short(vendor);
 						print_short(class_sub);
 						print_short(progif_rev);
+						print_short(pin_line);
 						print_return();
-						print_string("--this is the net card!");
+						print_return();
+						// print_string("Base Address:");
+						// print_return();
+						// print_long(0);
+						/* base address #0 */
+						PCI_CONFIG_READ_DWORD(lbus, lslot, lfunc, 0x10, address, base_address);
+						print_long(base_address & 0xFFFFFFFC);
+						/* base address #1 */
+						PCI_CONFIG_READ_DWORD(lbus, lslot, lfunc, 0x14, address, base_address);
+						print_long(base_address & 0xFFFFFFFC);
+						/* base address #2 */
+						PCI_CONFIG_READ_DWORD(lbus, lslot, lfunc, 0x18, address, base_address);
+						print_long(base_address & 0xFFFFFFFC);
+						/* base address #3 */
+						PCI_CONFIG_READ_DWORD(lbus, lslot, lfunc, 0x1c, address, base_address);
+						print_long(base_address & 0xFFFFFFFC);
+						/* base address #4 */
+						PCI_CONFIG_READ_DWORD(lbus, lslot, lfunc, 0x20, address, base_address);
+						print_long(base_address & 0xFFFFFFFC);
+						/* base address #5 */
+						PCI_CONFIG_READ_DWORD(lbus, lslot, lfunc, 0x24, address, base_address);
+						print_long(base_address & 0xFFFFFFFC);
 						print_return();
 					}
 					/* return vendor; */
@@ -80,7 +121,8 @@ unsigned short getOneValidDevice(void)
 				}
 			}
 		}
-		print_string("today is 20130126, I can print string in C code.");
+		print_return();
+		print_string(" Today is 20130526, I'm coding for NetCard.");
 		print_return();
 
 		//hlt();

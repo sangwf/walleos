@@ -104,6 +104,15 @@ start:
 	mov [4+esi], edx
 
 
+	;中断0x85
+	mov ax, print_hex_32_interrupt
+	mov dx, 0xef00
+	mov ecx,  0x85
+	lea esi, [idt+ecx*8]
+	mov [esi], eax
+	mov [4+esi], edx
+
+
 	pushfd
 	mov eax, 0xffffbfff
 	and dword [esp], eax
@@ -300,6 +309,81 @@ func_write_hex:
 	pop ebx
 	pop eax
 	ret
+
+;打印edx为16进制数，" 0x******** "，共占12个位置
+func_write_hex_32:
+	push eax
+	push ebx
+	push ds
+	mov eax, 0x10  ; 系统数据段
+	mov ds, ax
+
+	mov al, ' '
+	call func_write_normal_char
+	mov al, '0'
+	call func_write_normal_char
+	mov al, 'x'
+	call func_write_normal_char
+
+	;print edx's high word
+	push edx
+	shr edx, 16
+
+	xor eax, 0
+	mov al, dh
+	shr al, 4
+	mov al, [hex_map+eax]
+	call func_write_normal_char
+	xor eax, 0
+	mov al, dh
+	shl al, 4
+	shr al, 4
+	mov al, [hex_map+eax]
+	call func_write_normal_char
+	xor eax, 0
+	mov al, dl
+	shr al, 4
+	mov al, [hex_map+eax]
+	call func_write_normal_char
+	xor eax, 0
+	mov al, dl
+	shl al, 4
+	shr al, 4
+	mov al, [hex_map+eax]
+	call func_write_normal_char
+
+	pop edx
+
+	xor eax, 0
+	mov al, dh
+	shr al, 4
+	mov al, [hex_map+eax]
+	call func_write_normal_char
+	xor eax, 0
+	mov al, dh
+	shl al, 4
+	shr al, 4
+	mov al, [hex_map+eax]
+	call func_write_normal_char
+	xor eax, 0
+	mov al, dl
+	shr al, 4
+	mov al, [hex_map+eax]
+	call func_write_normal_char
+	xor eax, 0
+	mov al, dl
+	shl al, 4
+	shr al, 4
+	mov al, [hex_map+eax]
+	call func_write_normal_char
+
+	mov al, ' '
+	call func_write_normal_char
+	pop ds
+	pop ebx
+	pop eax
+	ret
+
 ;打印一个常规字符al到屏幕
 func_write_normal_char:
 	push eax
@@ -874,6 +958,23 @@ print_hex_interrupt:
 	iret
 
 align 4
+print_hex_32_interrupt:
+	push ds
+	push edx
+	push ecx
+	push ebx
+	push eax
+	;print dx
+	call func_write_hex_32
+	pop eax
+	pop ebx
+	pop ecx
+	pop edx
+	pop ds
+	iret
+
+
+align 4
 print_return_interrupt:
 	call func_write_return
 	iret
@@ -887,11 +988,11 @@ print_string_interrupt:
 
 
 STR_PCI_INFO:
-	db " BUS     SLOT    FUNC    DEVICE  VENDOR  SUB|CLASS REV|PROGIF"
+	db " BUS     SLOT    FUNC    DEVICE  VENDOR  SUB|CLASS REV|PROGIF PIN|LINE"
 	db 0
 
 STR_VERSION:
-	db "WALLEOS V1.6: "
+	db "WALLEOS V1.7: "
 	db 0
 
 current: 
