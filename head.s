@@ -55,6 +55,15 @@ start:
 	mov [esi], eax
 	mov [4+esi], edx
 
+	; netcard interrupt	
+	mov ax, netcard_interrupt
+	mov dx, 0xef00
+	mov ecx,  0x0B
+	lea esi, [idt+ecx*8]
+	mov [esi], eax
+	mov [4+esi], edx
+
+
 	;clock interrupt: 显示时间
 	mov ax, clock_int
 	mov dx, 0xef00
@@ -130,9 +139,9 @@ start:
 	lea edx, [STR_VERSION]
 	call func_write_string_by_pos
 
-	lea edx, [STR_PCI_INFO]
-	call func_write_string
-	call func_write_return
+	;lea edx, [STR_PCI_INFO]
+	;call func_write_string
+	;call func_write_return
 
 	;Test PCI Config
 	call C_ENTER	
@@ -907,6 +916,24 @@ task1_cur:
 	pop ds
 	iret
 
+align 4
+netcard_interrupt:
+	push ds
+	push edx
+	push ecx
+	push ebx
+	push eax
+	mov ch, 0x02
+	mov bh, 24
+	mov bl, 0
+	lea edx, [STR_VERSION]
+	call func_write_string_by_pos
+	pop eax
+	pop ebx
+	pop ecx
+	pop edx
+	pop ds
+	iret
 
 align 4
 system_interrupt:
@@ -992,7 +1019,7 @@ STR_PCI_INFO:
 	db 0
 
 STR_VERSION:
-	db "WALLEOS V1.7: "
+	db "WALLEOS V1.8(2013/6/5): "
 	db 0
 
 current: 
