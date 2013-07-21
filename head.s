@@ -146,6 +146,10 @@ start:
 	;Test PCI Config
 	call C_ENTER	
 
+    ;netcard driver
+    call func_nc_probe
+    call func_nc_reset
+
 	sti
 	push 0x17
 	push init_stack
@@ -1019,7 +1023,7 @@ STR_PCI_INFO:
 	db 0
 
 STR_VERSION:
-	db "WALLEOS V1.8(2013/6/5): "
+	db "WALLEOS V1.8(2013/7/21): "
 	db 0
 
 current: 
@@ -1115,3 +1119,4 @@ task1: ;显示时间
 
 	times 128 dd 0
 usr_stk1:
+%include "netcard_driver.s"
