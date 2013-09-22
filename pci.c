@@ -1,3 +1,7 @@
+// (C) 2013 Wenfeng Sang
+
+#include "print.h"
+
 #define ind(port) ({ \
 unsigned long _v; \
 __asm__ volatile ("in %%dx, %%eax":"=a" (_v):"d" (port)); \
@@ -6,24 +10,6 @@ _v; \
 
 #define outd(port, value) ({ \
 __asm__ volatile ("out %%eax, %%dx"::"d" (port), "a" (value) ); \
-})
-
-#define print_short(value) ({ \
-__asm__ volatile ("int $0x82"::"d" (value) ); \
-})
-
-#define print_long(value) ({ \
-__asm__ volatile ("int $0x85"::"d" (value) ); \
-})
-
-
-#define print_string(address) ({ \
-__asm__ volatile ("int $0x84"::"d" (address) ); \
-})
-
-
-#define print_return() ({ \
-__asm__ volatile ("int $0x83"::); \
 })
 
 #define hlt() ({ \

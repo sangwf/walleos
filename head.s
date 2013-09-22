@@ -1,27 +1,28 @@
 LATCH equ 11930
-;LATCH equ 59650 ; 11930*5
 KERNEL_SEL equ 0x08
+DATA_SEL equ 0x10
 SCRN_SEL equ 0x18
 TSS0_SEL equ 0x20
 LDT0_SEL equ 0x28
 TSS1_SEL equ 0x30
 LDT1_SEL equ 0x38
 
-;C编译后的代码入口处
-;C_ENTER equ 0x00001c80
+INPUT_BUFFER_SIZE equ 1024 ; 输入缓冲区大小
+RETURN_KEY  equ 0x1c ; return key
+LAST_ROW equ 24 ; 最后一行
 
 bits 32
-;mov ax, 0x4344
-
 start:
-	mov eax, 0x10 ;指向系统段
+	mov eax, DATA_SEL ;指向系统段
 	mov ds, ax
 
-	lss esp, [init_stack] ;这里出错的话，就检查你的数据段是不是正常的完整的拷贝到了0x0000
-	call setup_idt
+    ; 这里出错的话，就检查你的数据段是不是正常的完整的拷贝到了0x0000
+	lss esp, [init_stack]
+	
+    call setup_idt
 	call setup_gdt
 
-	mov eax, 0x10
+	mov eax, DATA_SEL
 	mov ds, ax
 	mov es, ax
 	mov fs, ax
@@ -40,7 +41,7 @@ start:
 
 	mov eax,  0x00080000
 
-	mov ax, timer_interrupt
+	mov ax, int_timer
 	mov dx, 0x8E00
 	mov ecx, 0x08
 	lea esi, [idt+ecx*8]
@@ -48,7 +49,7 @@ start:
 	mov [4+esi], edx
 
 	;init keyboard interrupt	
-	mov ax, keyboard_int
+	mov ax, int_keyboard
 	mov dx, 0xef00
 	mov ecx,  0x09
 	lea esi, [idt+ecx*8]
@@ -56,7 +57,7 @@ start:
 	mov [4+esi], edx
 
 	; netcard interrupt	
-	mov ax, netcard_interrupt
+	mov ax, int_netcard
 	mov dx, 0xef00
 	mov ecx,  0x0B
 	lea esi, [idt+ecx*8]
@@ -64,48 +65,48 @@ start:
 	mov [4+esi], edx
 
 
-	;clock interrupt: 显示时间
-	mov ax, clock_int
+	; clock interrupt: 显示时间
+	mov ax, int_clock_display
 	mov dx, 0xef00
 	mov ecx,  0x79
 	lea esi, [idt+ecx*8]
 	mov [esi], eax
 	mov [4+esi], edx
 
-
-	mov ax, system_interrupt
+    ; 系统调用的统一入口
+	mov ax, int_system
 	mov dx, 0xef00
 	mov ecx,  0x80
 	lea esi, [idt+ecx*8]
 	mov [esi], eax
 	mov [4+esi], edx
 
-	;中断0x81	
-	mov ax, print_bin_interrupt
+	; 中断0x81	
+	mov ax, int_print_bin
 	mov dx, 0xef00
 	mov ecx,  0x81
 	lea esi, [idt+ecx*8]
 	mov [esi], eax
 	mov [4+esi], edx
 
-	;中断0x82
-	mov ax, print_hex_interrupt
+	; 中断0x82
+	mov ax, int_print_hex
 	mov dx, 0xef00
 	mov ecx,  0x82
 	lea esi, [idt+ecx*8]
 	mov [esi], eax
 	mov [4+esi], edx
 
-	;中断0x83
-	mov ax, print_return_interrupt
+	; 中断0x83
+	mov ax, int_print_return
 	mov dx, 0xef00
 	mov ecx,  0x83
 	lea esi, [idt+ecx*8]
 	mov [esi], eax
 	mov [4+esi], edx
 
-	;中断0x84
-	mov ax, print_string_interrupt
+	; 中断0x84
+	mov ax, int_print_string
 	mov dx, 0xef00
 	mov ecx,  0x84
 	lea esi, [idt+ecx*8]
@@ -113,8 +114,8 @@ start:
 	mov [4+esi], edx
 
 
-	;中断0x85
-	mov ax, print_hex_32_interrupt
+	; 中断0x85
+	mov ax, int_print_hex_32
 	mov dx, 0xef00
 	mov ecx,  0x85
 	lea esi, [idt+ecx*8]
@@ -132,30 +133,18 @@ start:
 	lldt ax
 	mov dword [current], 0
 
-	;DEBUG:
 	mov ch, 0x02
-	mov bh, 24
+	mov bh, LAST_ROW
 	mov bl, 0
 	lea edx, [STR_VERSION]
 	call func_write_string_by_pos
 
-	;lea edx, [STR_PCI_INFO]
-	;call func_write_string
-	;call func_write_return
-
-	;Test PCI Config
-	call C_ENTER	
-
-    ;netcard driver
-    call func_nc_probe
-    call func_nc_reset
-
 	sti
-	push 0x17
+	push 0x17  ; ldt0中的第三项，表示局部数据段
 	push init_stack
-	pushfd
-	push 0x0f
-	push task0
+	pushfd     ; EFLAGS
+	push 0x0f  ; CS, ldt0中的第二项，表示局部代码段
+	push task0 ; IP
 	iret
 
 setup_gdt:
@@ -163,7 +152,7 @@ setup_gdt:
 	ret
 
 setup_idt:
-	lea edx, [ignore_int]
+	lea edx, [int_ignore]
 	mov eax, 0x00080000
 	mov ax, dx
 	mov dx, 0x8E00
@@ -423,7 +412,8 @@ func_update_location:
 	cmp ebx, 1920 ;1920个字符位置
 	jb  mark_not_overflow
 	mov ebx, 0
-mark_not_overflow: mov [scr_loc], ebx
+mark_not_overflow:
+    mov [scr_loc], ebx
 	call func_mov_cur
 	ret
 
@@ -496,7 +486,7 @@ mark_wsbp_while:
 	jne mark_wsbp_next
 	mov bl, 0
 	inc bh
-	cmp bh, 24
+	cmp bh, LAST_ROW
 	jne mark_wsbp_next
 	mov bh, 0
 mark_wsbp_next:
@@ -668,21 +658,23 @@ hex_map:
 	db "0123456789ABCDEF"
 
 align 4
-ignore_int:
+int_ignore:
 	push ds
 	push eax
 	mov eax, 0x10
-	mov ds,ax
+	mov ds, ax
 	mov eax, 'I'
-	mov ah, 0x0003
-	call write_char
+	mov ah, 0x03
+    mov bh, LAST_ROW
+    mov bl, 60
+	call func_write_char_by_pos
 	pop eax
 	pop ds
 	iret
 
 
 align 4
-clock_int: ;显示时钟
+int_clock_display: ;显示时钟
 	push ds
 	push eax
 	;get time
@@ -706,7 +698,7 @@ clock_int: ;显示时钟
 
 
 	mov ch, 0x02 ;color
-	mov bh, 24 ;行
+	mov bh, LAST_ROW ;行
 
 	mov al, [tm_sec]
 	xor edx, edx
@@ -785,7 +777,7 @@ leds:	db 0
 e0:	db 0
 
 align 4
-keyboard_int:
+int_keyboard:
 	push eax
 	push ebx
 	push ecx
@@ -804,9 +796,10 @@ keyboard_int:
 	je set_e0
 	cmp al, 0xe1
 	je set_e1
-	;call [key_table+eax*4]
-	call do_self
-	mov cl, 0
+	
+    call do_self
+	
+    mov cl, 0
 	mov [e0], cl
 
 e0_e1:
@@ -843,49 +836,61 @@ do_self:
 	cmp bl, 0
 	jne none
 
-	;word_count++
-	push edx
-	mov dx, [word_count]
-	inc dx
-	mov [word_count], dx
-	pop edx
-
-	mov ch, 0x07 ;screen color
-	mov bh, 24
-	mov bl, 15
+    ; 在屏幕最下方输出按键的二进制码，用于调试
+	mov ch, 0x07 ; screen color
+	mov bh, LAST_ROW
+	mov bl, 30
 	call print_binary	
+
 	and ax, 0x007f
+	mov al, [key_map + eax]
 
+    ; 记录到buffer中
+	push edx
+    mov edx, [input_position]
+    mov [input_buffer + edx], al
+     
+    ; update input position
+    inc edx
+    cmp edx, INPUT_BUFFER_SIZE
+    jb .mark_not_update_input_position
+    mov edx, 0
+.mark_not_update_input_position:
+    mov [input_position], edx
 
-	mov al, [key_map+eax]
-
+    ; 在屏幕上输出字符
 	call write_char
 
-;	mov ch, 0x02
-;	mov bh, 0
-;	mov bl, 0
-;	call func_write_char_by_pos	
-
+	pop edx
 none:
 	ret
 
-;for macbook pro keyboard
+; for macbook pro keyboard
 key_map:
 	db 0
 	db "01234567890-="
-	db 0x0e ;delete key
+	db 0x0e ; delete key
 	db " qwertyuiop[]"
-	db 0x1c ;return key
-	db 0x1d ;ctrl key(left)
+	db RETURN_KEY ; return key
+	db 0x1d ; ctrl key(left)
 	db "asdfghjkl;'"
 	db "  \zxcvbnm,./"
 	
 	times 128 db 0
 
+; 用于按键输入的buffer，循环队列，1024个字节
+input_buffer:
+    times INPUT_BUFFER_SIZE db 0
+; 表示当前buffer的下一个可输入字符
+input_position:
+    dd 0
+; 表示Shell当前处理到的字符位置
+deal_position:
+    dd 0
 
 
 align 4
-timer_interrupt:
+int_timer:
 	push ds
 	push eax
 	;for test
@@ -921,14 +926,14 @@ task1_cur:
 	iret
 
 align 4
-netcard_interrupt:
+int_netcard:
 	push ds
 	push edx
 	push ecx
 	push ebx
 	push eax
 	mov ch, 0x02
-	mov bh, 24
+	mov bh, LAST_ROW
 	mov bl, 0
 	lea edx, [STR_VERSION]
 	call func_write_string_by_pos
@@ -940,7 +945,7 @@ netcard_interrupt:
 	iret
 
 align 4
-system_interrupt:
+int_system:
 	push ds
 	push edx
 	push ecx
@@ -957,13 +962,13 @@ system_interrupt:
 	pop ds
 	iret
 align 4
-print_bin_interrupt:
+int_print_bin:
 	push ds
 	push edx
 	push ecx
 	push ebx
 	push eax
-	;mov ch, 0x02; color
+	mov ch, 0x02; color
 	call print_binary
 	pop eax
 	pop ebx
@@ -973,7 +978,7 @@ print_bin_interrupt:
 	iret
 
 align 4
-print_hex_interrupt:
+int_print_hex:
 	push ds
 	push edx
 	push ecx
@@ -989,7 +994,7 @@ print_hex_interrupt:
 	iret
 
 align 4
-print_hex_32_interrupt:
+int_print_hex_32:
 	push ds
 	push edx
 	push ecx
@@ -1006,12 +1011,12 @@ print_hex_32_interrupt:
 
 
 align 4
-print_return_interrupt:
+int_print_return:
 	call func_write_return
 	iret
 
 align 4
-print_string_interrupt:
+int_print_string:
 	mov ch, 0x02 ;color
 	call func_write_string
 	iret
@@ -1023,14 +1028,15 @@ STR_PCI_INFO:
 	db 0
 
 STR_VERSION:
-	db "WALLEOS V1.8(2013/7/21): "
+	db "WALLEOS V1.9(2013/9/19): "
 	db 0
+ERROR_COMMAND_INFO:
+    db "Command not valid. "
+    db 0
 
 current: 
 	dd 0
 scr_loc: 
-	dd 0
-word_count:
 	dd 0
 tm_sec:
 	db 0
@@ -1053,15 +1059,16 @@ align 8
 idt:
 	times 2048 db 0
 
-gdt:	dw 0, 0, 0, 0
-	dw 0x07ff, 0x0000, 0x9a00, 0x00c0 ;0x08
-	dw 0x07ff, 0x0000, 0x9200, 0x00c0 ;0x10
-	dw 0x0002, 0x8000, 0x920b, 0x00c0 ;0x18
-	dw 0x68, tss0, 0xe900, 0x0 ;0x20
-	dw 0x40, ldt0, 0xe200, 0x0 ;0x28
-	dw 0x68, tss1, 0xe900, 0x0 ;0x30
-	dw 0x40, ldt1, 0xe200, 0x0 ;0x38
-	dw 0x0002, 0x8000, 0x920b, 0x00c0 ;0x40
+gdt:	
+    dw 0, 0, 0, 0
+	dw 0x07ff, 0x0000, 0x9a00, 0x00c0 ; 0x08
+	dw 0x07ff, 0x0000, 0x9200, 0x00c0 ; 0x10
+	dw 0x0002, 0x8000, 0x920b, 0x00c0 ; 0x18
+	dw 0x68, tss0, 0xe900, 0x0 ; 0x20
+	dw 0x40, ldt0, 0xe200, 0x0 ; 0x28
+	dw 0x68, tss1, 0xe900, 0x0 ; 0x30
+	dw 0x40, ldt1, 0xe200, 0x0 ; 0x38
+	dw 0x0002, 0x8000, 0x920b, 0x00c0 ; 0x40
 end_gdt:
 	times 128 dd 0 
 init_stack:
@@ -1081,7 +1088,7 @@ tss0:	dd 0
 	dd 0, 0, 0, 0, 0, 0
 	dd LDT0_SEL, 0x80000000
 
-	times 128 db 0
+	times 128 dd 0
 krn_stk0:
 
 align 8
@@ -1099,19 +1106,33 @@ tss1:	dd 0
 	dd 0x17, 0x0f, 0x17, 0x17, 0x17, 0x17
 	dd LDT1_SEL, 0x80000000
 
-	times 128 dw 0
+	times 128 dd 0
 krn_stk1:
 
-task0: ;显示字母数量
-;	mov eax, 0x17
-;	mov ds, ax
-;	mov ax, [word_count]
-;	mov ch, 0x04 ;color
-;	mov bh, 24 ;行
-;	mov bl, 44 ;列
-;	int 0x81
-	nop
-	jmp task0
+task0: ; for shell
+    mov eax, 0x10
+    jmp task0
+    ; BUG: 修改ds会导致出错？
+    mov ds, eax
+    mov eax, [input_position]
+    cmp eax, [deal_position]
+    jne .mark_need_deal
+
+    mov al, 'N'
+    mov bh, LAST_ROW
+    mov bl, 60
+    call func_write_char_by_pos
+
+    jmp task0
+.mark_need_deal: 
+    mov [deal_position], eax
+
+    mov al, 'D'
+    mov bh, LAST_ROW
+    mov bl, 60
+    call func_write_char_by_pos
+
+    jmp task0
 task1: ;显示时间
 	int 0x79
 	nop
@@ -1119,4 +1140,3 @@ task1: ;显示时间
 
 	times 128 dd 0
 usr_stk1:
-%include "netcard_driver.s"
