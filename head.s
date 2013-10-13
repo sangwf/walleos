@@ -1,4 +1,4 @@
-LATCH equ 11930
+LATCH equ (11931800 * 2)
 KERNEL_SEL equ 0x08
 DATA_SEL equ 0x10
 SCRN_SEL equ 0x18
@@ -9,7 +9,13 @@ LDT1_SEL equ 0x38
 
 INPUT_BUFFER_SIZE equ 1024 ; 输入缓冲区大小
 RETURN_KEY  equ 0x1c ; return key
+
 LAST_ROW equ 24 ; 最后一行
+LAST_ROW_ERROR_NUM  equ 30 ; 用于打印错误编号
+LAST_ROW_ERROR_INFO equ 40 ; 用于打印错误信息
+LAST_ROW_TIME       equ 72 ; 用于打印时间
+
+NP_SYS_FORK equ 1 ; fork系统调用编号
 
 bits 32
 start:
@@ -44,83 +50,83 @@ start:
 	mov ax, int_timer
 	mov dx, 0x8E00
 	mov ecx, 0x08
-	lea esi, [idt+ecx*8]
+	lea esi, [idt + ecx * 8]
 	mov [esi], eax
-	mov [4+esi], edx
+	mov [4 + esi], edx
 
 	;init keyboard interrupt	
 	mov ax, int_keyboard
 	mov dx, 0xef00
 	mov ecx,  0x09
-	lea esi, [idt+ecx*8]
+	lea esi, [idt + ecx * 8]
 	mov [esi], eax
-	mov [4+esi], edx
+	mov [4 + esi], edx
 
 	; netcard interrupt	
 	mov ax, int_netcard
 	mov dx, 0xef00
 	mov ecx,  0x0B
-	lea esi, [idt+ecx*8]
+	lea esi, [idt + ecx * 8]
 	mov [esi], eax
-	mov [4+esi], edx
+	mov [4 + esi], edx
 
 
 	; clock interrupt: 显示时间
 	mov ax, int_clock_display
 	mov dx, 0xef00
 	mov ecx,  0x79
-	lea esi, [idt+ecx*8]
+	lea esi, [idt + ecx * 8]
 	mov [esi], eax
-	mov [4+esi], edx
+	mov [4 + esi], edx
 
     ; 系统调用的统一入口
-	mov ax, int_system
+	mov ax, int_syscall
 	mov dx, 0xef00
 	mov ecx,  0x80
-	lea esi, [idt+ecx*8]
+	lea esi, [idt + ecx * 8]
 	mov [esi], eax
-	mov [4+esi], edx
+	mov [4 + esi], edx
 
 	; 中断0x81	
 	mov ax, int_print_bin
 	mov dx, 0xef00
 	mov ecx,  0x81
-	lea esi, [idt+ecx*8]
+	lea esi, [idt + ecx * 8]
 	mov [esi], eax
-	mov [4+esi], edx
+	mov [4 + esi], edx
 
 	; 中断0x82
 	mov ax, int_print_hex
 	mov dx, 0xef00
 	mov ecx,  0x82
-	lea esi, [idt+ecx*8]
+	lea esi, [idt + ecx * 8]
 	mov [esi], eax
-	mov [4+esi], edx
+	mov [4 + esi], edx
 
 	; 中断0x83
 	mov ax, int_print_return
 	mov dx, 0xef00
 	mov ecx,  0x83
-	lea esi, [idt+ecx*8]
+	lea esi, [idt + ecx * 8]
 	mov [esi], eax
-	mov [4+esi], edx
+	mov [4 + esi], edx
 
 	; 中断0x84
 	mov ax, int_print_string
 	mov dx, 0xef00
 	mov ecx,  0x84
-	lea esi, [idt+ecx*8]
+	lea esi, [idt + ecx * 8]
 	mov [esi], eax
-	mov [4+esi], edx
+	mov [4 + esi], edx
 
 
 	; 中断0x85
 	mov ax, int_print_hex_32
 	mov dx, 0xef00
 	mov ecx,  0x85
-	lea esi, [idt+ecx*8]
+	lea esi, [idt + ecx * 8]
 	mov [esi], eax
-	mov [4+esi], edx
+	mov [4 + esi], edx
 
 
 	pushfd
@@ -135,9 +141,13 @@ start:
 
 	mov ch, 0x02
 	mov bh, LAST_ROW
-	mov bl, 0
+	mov bl, 0 ; 最左侧第0列开始
 	lea edx, [STR_VERSION]
 	call func_write_string_by_pos
+
+    ; test error syscall
+    mov eax, 2
+    int 0x80
 
 	sti
 	push 0x17  ; ldt0中的第三项，表示局部数据段
@@ -160,7 +170,7 @@ setup_idt:
 	mov ecx, 256
 
 rp_idt: mov [edi], eax
-	mov [edi+4], edx
+	mov [edi + 4], edx
 	add edi, 8
 	dec ecx
 	jne rp_idt
@@ -216,9 +226,9 @@ normal_char:
 
 
 	shl ebx, 1
-	mov [gs:ebx],al
+	mov [gs: ebx],al
 	; color
-	mov [gs:ebx+1],ch
+	mov [gs: ebx + 1],ch
 
 	shr ebx, 1
 
@@ -229,7 +239,7 @@ normal_char:
 not_add_loc:
 	call func_update_location
 	shl ebx, 1
-	mov [gs:ebx+1],ch
+	mov [gs: ebx + 1],ch
 write_char_ret:
 	pop gs
 	pop edx
@@ -285,24 +295,24 @@ func_write_hex:
 	xor eax, 0
 	mov al, dh
 	shr al, 4
-	mov al, [hex_map+eax]
+	mov al, [hex_map + eax]
 	call func_write_normal_char
 	xor eax, 0
 	mov al, dh
 	shl al, 4
 	shr al, 4
-	mov al, [hex_map+eax]
+	mov al, [hex_map + eax]
 	call func_write_normal_char
 	xor eax, 0
 	mov al, dl
 	shr al, 4
-	mov al, [hex_map+eax]
+	mov al, [hex_map + eax]
 	call func_write_normal_char
 	xor eax, 0
 	mov al, dl
 	shl al, 4
 	shr al, 4
-	mov al, [hex_map+eax]
+	mov al, [hex_map + eax]
 	call func_write_normal_char
 
 	mov al, ' '
@@ -334,24 +344,24 @@ func_write_hex_32:
 	xor eax, 0
 	mov al, dh
 	shr al, 4
-	mov al, [hex_map+eax]
+	mov al, [hex_map + eax]
 	call func_write_normal_char
 	xor eax, 0
 	mov al, dh
 	shl al, 4
 	shr al, 4
-	mov al, [hex_map+eax]
+	mov al, [hex_map + eax]
 	call func_write_normal_char
 	xor eax, 0
 	mov al, dl
 	shr al, 4
-	mov al, [hex_map+eax]
+	mov al, [hex_map + eax]
 	call func_write_normal_char
 	xor eax, 0
 	mov al, dl
 	shl al, 4
 	shr al, 4
-	mov al, [hex_map+eax]
+	mov al, [hex_map + eax]
 	call func_write_normal_char
 
 	pop edx
@@ -359,24 +369,24 @@ func_write_hex_32:
 	xor eax, 0
 	mov al, dh
 	shr al, 4
-	mov al, [hex_map+eax]
+	mov al, [hex_map + eax]
 	call func_write_normal_char
 	xor eax, 0
 	mov al, dh
 	shl al, 4
 	shr al, 4
-	mov al, [hex_map+eax]
+	mov al, [hex_map + eax]
 	call func_write_normal_char
 	xor eax, 0
 	mov al, dl
 	shr al, 4
-	mov al, [hex_map+eax]
+	mov al, [hex_map + eax]
 	call func_write_normal_char
 	xor eax, 0
 	mov al, dl
 	shl al, 4
 	shr al, 4
-	mov al, [hex_map+eax]
+	mov al, [hex_map + eax]
 	call func_write_normal_char
 
 	mov al, ' '
@@ -395,9 +405,9 @@ func_write_normal_char:
 	mov bx, [scr_loc]	
 
 	shl ebx, 1
-	mov [gs:ebx],al
+	mov [gs: ebx],al
 	; color
-	mov [gs:ebx+1],ch
+	mov [gs: ebx + 1],ch
 	shr ebx, 1
 	add ebx, 1
 	call func_update_location
@@ -420,32 +430,26 @@ mark_not_overflow:
 
 func_mov_cur: ;移动光标，ebx保存有cur要设置的位置
 	push eax
-	push edx        
-
-	;--------------------------------------;
-        ;   VGA寄存器 低字节;
-        ;--------------------------------------;
-
-        mov     al, 0x0f               ; 光标位置低字节索引
-        mov     dx, 0x03D4             ; 写到CRT索引寄存器
-        out     dx, al
-
-        mov     al, bl                 ; 当前位置在EBX中，BL包含低字节，BH高字节
-        mov     dx, 0x03D5             ; 写到数据寄存器
-        out     dx, al                 ; 低字节
-
-        ;---------------------------------------;
-        ;   VGA 寄存器 高字节;
-        ;---------------------------------------;
-
-        xor     eax, eax
-        mov     al, 0x0e               ; 光标位置高字节索引
-        mov     dx, 0x03D4             ; 写到CRT索引寄存器
-        out     dx, al
- 
-        mov     al, bh                 ; 当前位置在EBX中，BL包含低字节，BH高字节
-        mov     dx, 0x03D5             ; 写到数据寄存器
-        out     dx, al                 ; 高字节
+	push edx
+    
+    ; VGA寄存器 低字节
+    mov     al, 0x0f               ; 光标位置低字节索引
+    mov     dx, 0x03D4             ; 写到CRT索引寄存器
+    out     dx, al
+    
+    mov     al, bl                 ; 当前位置在EBX中，BL包含低字节，BH高字节
+    mov     dx, 0x03D5             ; 写到数据寄存器
+    out     dx, al                 ; 低字节
+    
+    ; VGA 寄存器 高字节;
+    xor     eax, eax
+    mov     al, 0x0e               ; 光标位置高字节索引
+    mov     dx, 0x03D4             ; 写到CRT索引寄存器
+    out     dx, al
+    
+    mov     al, bh                 ; 当前位置在EBX中，BL包含低字节，BH高字节
+    mov     dx, 0x03D5             ; 写到数据寄存器
+    out     dx, al                 ; 高字节
 mov_cur_ret:
 	pop edx
 	pop eax
@@ -479,7 +483,7 @@ mark_wsbp_while:
 	cmp byte [edx], 0
 	je mark_wsbp_ret
 	mov al, [edx]
-	call func_write_char_by_pos
+	call func_print_char_by_pos
 	inc bl
 	;处理换行问题
 	cmp bl, 80
@@ -499,8 +503,8 @@ mark_wsbp_ret:
 	ret
 
 
-;输入一个字符al到bh行，bl列，ch为color
-func_write_char_by_pos:
+; 输入一个字符al到bh行，bl列，ch为color
+func_print_char_by_pos:
 	push gs
 	push ebx
 	push edx
@@ -572,8 +576,8 @@ repeat_pos:
 	;print
 	shl edx, 1
 	add al, '0';加上asc偏移
-	mov [gs:edx], al
-	mov [gs:edx+1], ch
+	mov [gs: edx], al
+	mov [gs: edx + 1], ch
 
 
 	inc si
@@ -587,9 +591,9 @@ repeat_pos:
 	pop gs
 	ret
 
-;打印一个整数ax到bh行，bl列, 颜色信息存放在ch
-;16进制
-print_hex:
+; 打印一个整数ax到bh行，bl列, 颜色信息存放在ch
+; 16进制
+func_print_hex_by_pos:
 	push eax
 	push ebx
 	push ecx
@@ -637,9 +641,9 @@ repeat_pos2:
 	push ebx
 	mov ebx, 0
 	mov bl, al
-	mov al, [hex_map+ebx]
-	mov [gs:edx], al
-	mov [gs:edx+1], ch
+	mov al, [hex_map + ebx]
+	mov [gs: edx], al
+	mov [gs: edx + 1], ch
 	pop ebx	
 
 	inc si
@@ -654,6 +658,7 @@ repeat_pos2:
 	pop ebx
 	pop eax	
 	ret
+
 hex_map:
 	db "0123456789ABCDEF"
 
@@ -667,110 +672,77 @@ int_ignore:
 	mov ah, 0x03
     mov bh, LAST_ROW
     mov bl, 60
-	call func_write_char_by_pos
+	call func_print_char_by_pos
 	pop eax
 	pop ds
 	iret
 
+align 4
+func_translate_time_unit: ; 将al中的时/分/秒转换为可打印字符，放到bl/bh中
+    push edx
+
+	xor edx, edx
+	mov dl, al
+	shr dl, 4	
+	mov bl, [key_map + 1 + edx]
+	
+    xor edx, edx
+	mov dl, al
+	shl dl, 4
+	shr dl, 4	
+	mov bh, [key_map + 1 + edx]
+    
+    pop edx
+    ret
 
 align 4
-int_clock_display: ;显示时钟
-	push ds
-	push eax
-	;get time
-	;second
-	mov al, 0x00
-	out 0x70, al
-	in al, 0x71
-	mov [tm_sec], al
-
-	;miniute
-	mov al, 0x02
-	out 0x70, al
-	in al, 0x71
-	mov [tm_min], al
-
-	;hour
+int_clock_display: ; 显示时钟
+    push eax
+    push ebx
+    push ecx
+	; get time
+	; hour
 	mov al, 0x04
 	out 0x70, al
 	in al, 0x71
-	mov [tm_hour], al
+    call func_translate_time_unit
 
+    mov [STR_TIME + 0], bl
+    mov [STR_TIME + 1], bh
 
-	mov ch, 0x02 ;color
-	mov bh, LAST_ROW ;行
+    ; miniute
+	mov al, 0x02
+	out 0x70, al
+	in al, 0x71
+    call func_translate_time_unit
 
-	mov al, [tm_sec]
-	xor edx, edx
-	mov dl, al
-	shl dl, 4
-	shr dl, 4	
+    mov [STR_TIME + 3], bl
+    mov [STR_TIME + 4], bh
 
-	mov al, [key_map+1+edx]
-	mov bl, 79
-	call func_write_char_by_pos
+    ; second
+	mov al, 0x00
+	out 0x70, al
+	in al, 0x71
+    call func_translate_time_unit
 
-	mov al, [tm_sec]
-	xor edx, edx
-	mov dl, al
-	shr dl, 4	
+    mov [STR_TIME + 6], bl
+    mov [STR_TIME + 7], bh
 
-	mov al, [key_map+1+edx]
-	mov bl, 78
-	call func_write_char_by_pos
+    ; 在屏幕右下角显示时间
+    ; 时钟颜色由2*[current]+2决定
+    mov ch, [current]
+    add ch, [current]
+    add ch, 2
+	
+    mov bh, LAST_ROW ; 行
+    mov bl, LAST_ROW_TIME ; 列
+    lea edx, [STR_TIME]
+	call func_write_string_by_pos
 
-	mov al, ':'
-	mov bl, 77
-	call func_write_char_by_pos
-
-	mov al, [tm_min]
-	xor edx, edx
-	mov dl, al
-	shl dl, 4
-	shr dl, 4	
-
-	mov al, [key_map+1+edx]
-	mov bl, 76
-	call func_write_char_by_pos
-
-	mov al, [tm_min]
-	xor edx, edx
-	mov dl, al
-	shr dl, 4	
-
-	mov al, [key_map+1+edx]
-	mov bl, 75
-	call func_write_char_by_pos
-
-	mov al, ':'
-	mov bl, 74
-	call func_write_char_by_pos
-
-	mov al, [tm_hour]
-	xor edx, edx
-	mov dl, al
-	shl dl, 4
-	shr dl, 4	
-
-	mov al, [key_map+1+edx]
-	mov bl, 73
-	call func_write_char_by_pos
-
-	mov al, [tm_hour]
-	xor edx, edx
-	mov dl, al
-	shr dl, 4	
-
-	mov al, [key_map+1+edx]
-	mov bl, 72
-	call func_write_char_by_pos
-
-
+    pop ecx
+    pop ebx
 	pop eax
-	pop ds
 	iret
-
-
 
 mode:	db 0
 leds:	db 0
@@ -893,31 +865,23 @@ align 4
 int_timer:
 	push ds
 	push eax
-	;for test
-	;mov eax, 'T'
-	;mov ah, 0x04;4
-	;call write_char
-	;end test
 	
 	mov eax, 0x10
 	mov ds, ax
 	mov al, 0x20
 	out 0x20, al
-	mov  eax, 1
 
-	;pop eax
-	;pop ds
-	;iret
+    int 0x79
 
-
+    mov  eax, 1
 	cmp [current], eax
 	je task0_cur
 	mov dword [current], eax
-	jmp TSS1_SEL:0
+	jmp TSS1_SEL: 0
 	jmp task1_cur
 task0_cur:	
 	mov dword [current], 0
-	jmp TSS0_SEL:0
+	jmp TSS0_SEL: 0
 task1_cur:	
 
 
@@ -945,22 +909,46 @@ int_netcard:
 	iret
 
 align 4
-int_system:
+; fork系统调用的实现
+func_syscall_fork:
+    ; TODO
+    ret
+
+align 4
+int_syscall:
 	push ds
 	push edx
 	push ecx
 	push ebx
 	push eax
-	mov edx, 0x10
-	mov ds, dx
-	;mov ah, 0x0002
-	call write_char
-	pop eax
+	
+    cmp eax, NP_SYS_FORK
+    je .mark_fork
+    jmp .mark_syscall_ret
+
+.mark_fork:
+    call func_syscall_fork
+
+.mark_syscall_ret:
+    mov ch, 0x02
+	mov bh, LAST_ROW
+
+    ; 打印系统调用编号ax
+    mov bl, LAST_ROW_ERROR_NUM
+    call func_print_hex_by_pos
+
+    ; 打印出错信息
+	mov bl, LAST_ROW_ERROR_INFO
+	lea edx, [STR_INVALID_SYSTEM_CALL]
+	call func_write_string_by_pos
+
+    pop eax
 	pop ebx
 	pop ecx
 	pop edx
 	pop ds
 	iret
+
 align 4
 int_print_bin:
 	push ds
@@ -1021,38 +1009,28 @@ int_print_string:
 	call func_write_string
 	iret
 
-
-
-STR_PCI_INFO:
-	db " BUS     SLOT    FUNC    DEVICE  VENDOR  SUB|CLASS REV|PROGIF PIN|LINE"
-	db 0
-
 STR_VERSION:
-	db "WALLEOS V1.9(2013/9/19): "
+	db "WALLEOS V1.91(2013/10/13): "
 	db 0
-ERROR_COMMAND_INFO:
-    db "Command not valid. "
+STR_INVALID_SYSTEM_CALL:
+    db "System Call Invalid! "
+    db 0
+STR_TIME:
+    db 0, 0, ':', 0, 0 , ':', 0, 0
     db 0
 
 current: 
 	dd 0
 scr_loc: 
 	dd 0
-tm_sec:
-	db 0
-tm_min:
-	db 0
-tm_hour:
-	db 0
-
 
 align 4
 	dw 0
 lidt_opcode:
-	dw 256*8-1
+	dw 256 * 8 - 1
 	dd idt
 lgdt_opcode:
-	dw (end_gdt-gdt)-1
+	dw (end_gdt - gdt) - 1
 	dw gdt, 0
 
 align 8
@@ -1121,7 +1099,7 @@ task0: ; for shell
     mov al, 'N'
     mov bh, LAST_ROW
     mov bl, 60
-    call func_write_char_by_pos
+    call func_print_char_by_pos
 
     jmp task0
 .mark_need_deal: 
@@ -1130,11 +1108,11 @@ task0: ; for shell
     mov al, 'D'
     mov bh, LAST_ROW
     mov bl, 60
-    call func_write_char_by_pos
-
+    call func_print_char_by_pos
+    
     jmp task0
 task1: ;显示时间
-	int 0x79
+	; int 0x79
 	nop
 	jmp task1
 
