@@ -2,7 +2,7 @@ Walle OS
 =======
 by sangwf
 
-*注意* 现在的开发环境是Mac OS X，如果你是其它系统，需要根据需要调整。
+*注意* 现在的开发环境是Mac OS X，如果你是其它系统，需要根据系统环境做调整。
 
 20130721 v1.8 release，还在进行网卡驱动的开发，MAC地址尚未成功获取。截图：http://pan.baidu.com/share/link?shareid=3243972747&uk=2667868178
 
