@@ -2,10 +2,10 @@ LATCH equ (11931800 * 2)
 KERNEL_SEL equ 0x08
 DATA_SEL equ 0x10
 SCRN_SEL equ 0x18
-TSS0_SEL equ 0x20
-LDT0_SEL equ 0x28
-TSS1_SEL equ 0x30
-LDT1_SEL equ 0x38
+LDT0_SEL equ 0x20
+TSS0_SEL equ 0x28
+LDT0_INDEX equ 4 ; GDT中第4条
+TSS0_INDEX equ 5 ; GDT中第5条
 
 INPUT_BUFFER_SIZE equ 1024 ; 输入缓冲区大小
 RETURN_KEY  equ 0x1c ; return key
@@ -15,7 +15,9 @@ LAST_ROW_ERROR_NUM  equ 30 ; 用于打印错误编号
 LAST_ROW_INFO equ 40 ; 用于打印错误信息
 LAST_ROW_TIME       equ 72 ; 用于打印时间
 
-NP_SYS_FORK equ 1 ; fork系统调用编号
+NR_SYS_FORK equ 1 ; fork系统调用编号
+
+MAX_PROCESS_COUNT equ 10 ; 最多新创建10个进程
 
 bits 32
 start:
@@ -146,7 +148,7 @@ start:
  
     mov eax, 0x17 ; 设置任务0的数据段
     mov ds, eax
-
+    
     sti
     push 0x17  ; ldt0中的第三项，表示局部数据段
     push usr_stk0
@@ -477,10 +479,11 @@ func_print_string_by_pos:
     push eax
     push ebx
     push ecx
+    push edx
     
-mark_wsbp_while:
+.mark_wsbp_while:
     cmp byte [edx], 0
-    je mark_wsbp_ret
+    je .mark_wsbp_ret
     mov cl, [edx]
     call func_print_char_by_pos
     inc bl
@@ -494,9 +497,10 @@ mark_wsbp_while:
     mov bh, 0
 .mark_wsbp_next:
     inc edx
-    jmp mark_wsbp_while
+    jmp .mark_wsbp_while
     
-mark_wsbp_ret:
+.mark_wsbp_ret:
+    pop edx
     pop ecx
     pop ebx
     pop eax
@@ -521,7 +525,7 @@ func_print_char_by_pos:
     mov bh, 0    
     add dx, bx ; add bl
     
-    ;print
+    ; print
     shl edx, 1
     mov [gs: edx], cl
     mov [gs: edx + 1], ch
@@ -660,6 +664,7 @@ hex_map:
 
 align 4
 int_ignore:
+    iret ; TODO
     push ds
     push eax
     push ebx
@@ -873,25 +878,37 @@ align 4
 int_timer:
     push ds
     push eax
-    
+    push ebx
+
     mov eax, DATA_SEL
     mov ds, ax
 
     mov al, 0x20
     out 0x20, al
+    jmp timer_ret ; TODO
 
-    mov  eax, 1
-    cmp [current], eax
-    je task0_cur
-    mov dword [current], eax
-    jmp TSS1_SEL: 0
-    jmp task1_cur
-task0_cur:    
-    mov dword [current], 0
-    jmp TSS0_SEL: 0
-task1_cur:    
+    mov ebx, [process_count]
+    inc ebx ; process_count + 1
+    mov eax, [current]
+    inc eax ; next task
+    
+ 
+    cmp eax, ebx
+    jne task_switch
+    mov eax, 0
+    cmp eax, [current]
+    je timer_ret ; 处理只有0号进程的情况，不进行切换
+task_switch:
+    mov [current], eax
+    add eax, TSS0_INDEX ; 加上偏移
+    shl eax, 3
+    push eax
+    push 0
+    jmp far [esp + 0]
+    add esp, 4
 
-
+timer_ret:
+    pop ebx
     pop eax
     pop ds
     iret
@@ -917,17 +934,179 @@ int_netcard:
 
 align 4
 ; fork系统调用的实现
+; @input eax = NR_SYS_FORK
+; @return 父进程的用户栈压入process_count，子进程的用户栈压入0
 func_syscall_fork:
-    ; TODO
-    ret
-
-align 4
-int_syscall:
-    push ds
+    ; 判断是否到最大值
     push edx
     push ecx
     push ebx
     push eax
+
+    ; TODO 现在并没有实现保存现有process的寄存器状态，也就是tss中的数据是过时的
+    ; 对于子进程，等于复制的是过时的tss，需要处理
+
+    mov edx, [process_count]
+    cmp edx, MAX_PROCESS_COUNT
+    jne .mark_copy_process
+    pop eax
+    pop ebx
+    pop ecx
+    pop edx
+    ret
+  
+.mark_copy_process:
+    ; process_count++
+    inc edx
+    mov [process_count], edx
+    ; 复制gdt中一项
+    mov ecx, [current]
+    mov ebx, [gdt_new_process_base + ecx * 8]
+    mov [gdt_new_process_base + edx * 8], ebx
+    mov ebx, [gdt_new_process_base + ecx * 8 + 4]
+    mov [gdt_new_process_base + edx * 8 + 4], ebx
+
+    ; 更新gdt新条目中，tss的值
+    lea ebx, [tss_start + edx * 8]
+    mov [gdt_new_process_base + edx * 8 + 2], ebx
+
+    ; 复制tss段, 需要改写进程内核栈和用户栈，并复制两个栈里的内容 
+ .mark_copy_tss_loop:
+    mov ebx, 0
+    push eax
+    push ebx
+    push ecx
+    push edx
+    
+    mov ax, 104
+    mul cx
+    mov ebx, eax
+    mov ax, 4
+    mul bx
+    add ebx, eax
+    mov ecx, [tss_start + ebx]
+    
+    mov ax, 104
+    mul dx
+    mov ebx, eax
+    mov ax, 4
+    mul bx
+    add ebx, eax
+    mov [tss_start + ebx], ecx
+
+    pop edx
+    pop ecx
+    pop ebx
+    pop eax
+    inc ebx
+    cmp ebx, 26
+    je .mark_copy_tss_finish
+    jmp .mark_copy_tss_loop
+.mark_copy_tss_finish:
+    ; 更新tss中的内核栈和用户栈
+    ; 内核栈是第1个dd，就是减去一个两内核栈地址的偏移
+    mov eax, edx
+    sub eax, ecx
+    mov bx, 128 * 4
+    mul bx
+
+    ; tss_start + edx * 104 + 4
+    push eax
+    mov eax, edx
+    mov bx, 104
+    mul bx
+    lea ebx, [tss_start]
+    add ebx, eax
+    add ebx, 4
+    pop eax
+    
+    sub [ebx], eax
+    ; 用户栈是第14个dd，减去两用户栈的偏移，与两内核栈偏移相等
+    add ebx, 52 ; 4 * 13
+    sub [ebx], eax
+
+    ; 复制两个栈里的内容，每个栈的大小为128 * 4 = 512B 
+    mov eax, ds
+    mov es, eax
+    lea si, [user_kernel_stack_head] 
+    mov eax, ecx
+    add eax, 1
+    mov bx, 512
+    mul bx
+    sub si, ax
+    
+    lea di, [user_kernel_stack_head] 
+    mov eax, edx
+    add eax, 1
+    mul bx
+    sub di, ax
+    
+    push ecx
+    mov ecx, 512
+    rep movsb
+    pop ecx
+
+    lea si, [user_stack_head] 
+    mov eax, ecx
+    add eax, 1
+    mul bx
+    sub si, ax
+    
+    lea di, [user_stack_head] 
+    mov eax, edx
+    add eax, 1
+    mul bx
+    sub di, ax
+    
+    push ecx
+    mov ecx, 512
+    rep movsb
+    pop ecx
+
+
+    ; 给父进程的用户栈压入process_count，给子进程的用户栈压入0
+    ; ebp为用户栈esp的地址，这里在esp - 4的位置，压入返回值
+    push edx
+    lea ebx, [tss_start]
+    mov eax, ecx
+    mov dx, 104
+    mul dx
+    add ebx, eax
+    add ebx, 4
+
+    mov [ebx], ebp
+    pop edx
+    mov [ebp - 4], edx ; edx is process_count
+
+    push ecx
+    lea ebx, [tss_start]
+    mov eax, edx
+    mov cx, 104
+    mul cx
+    add ebx, eax
+    add ebx, 4
+
+    mov [ebx], ebp
+    mov dword [ebp - 4], 0 ; 0 to sub process
+    pop ecx
+
+.mark_syscall_fork_ret:
+    pop eax
+    pop ebx
+    pop ecx
+    pop edx
+    ret
+
+align 4
+int_syscall:
+    push ebp
+    ; ebp用于存放到用户栈的esp值，这里要分清楚用户栈和内核栈
+    ; 当进行中断时，系统会依次在内核栈中压入ss0, esp0, eflags, cs, eip
+    mov ebp, [esp + 16] ; 在esp0之上，还存放了eflags, cs, eip, ebp
+    push ds
+    push edx
+    push ecx
+    push ebx
 
     mov ebx, DATA_SEL
     mov ds, bx
@@ -941,16 +1120,20 @@ int_syscall:
     call func_print_hex_by_pos
 
    
-    cmp eax, NP_SYS_FORK
+    cmp eax, NR_SYS_FORK
     je .mark_fork
     jmp .mark_syscall_error
 
 .mark_fork:
-    call func_syscall_fork
-    
     ; 打印fork说明
     mov bl, LAST_ROW_INFO
     lea edx, [STR_FORK_SYSCALL]
+    call func_print_string_by_pos
+
+    ; call func_syscall_fork
+    
+    mov bl, LAST_ROW_INFO
+    lea edx, [STR_FORK_SYSCALL_DONE]
     call func_print_string_by_pos
 
 
@@ -963,11 +1146,11 @@ int_syscall:
     call func_print_string_by_pos
 
 .mark_syscall_ret:
-    pop eax
     pop ebx
     pop ecx
     pop edx
     pop ds
+    pop ebp
     iret
 
 align 4
@@ -1031,22 +1214,29 @@ int_print_string:
     iret
 
 STR_VERSION:
-    db "WALLEOS V1.91(2013/10/14): "
+    db "WALLEOS V2.0(2013/10/23): "
     db 0
 STR_INVALID_SYSCALL:
     db "System Call Invalid! "
     db 0    
 STR_FORK_SYSCALL:
-    db "System Call <fork>!  "
+    db "System Call <fork>!       "
     db 0
+
+STR_FORK_SYSCALL_DONE:
+    db "System Call <fork> Done!  "
+    db 0
+
 
 STR_TIME:
     db 0, 0, ':', 0, 0 , ':', 0, 0
     db 0
 STR_INT_IGNORE:
-    db "Ignore Interrupt!    "
+    db "Ignore Interrupt!         "
     db 0
 
+process_count: ; 目前已使用的进程数 
+    dd 0
 current: 
     dd 0
 scr_loc: 
@@ -1067,14 +1257,13 @@ idt:
 
 gdt:    
     dw 0, 0, 0, 0
-    dw 0x07ff, 0x0000, 0x9a00, 0x00c0 ; 0x08
-    dw 0x07ff, 0x0000, 0x9200, 0x00c0 ; 0x10
-    dw 0x0002, 0x8000, 0x920b, 0x00c0 ; 0x18
-    dw 0x68, tss0, 0xe900, 0x0 ; 0x20
-    dw 0x40, ldt0, 0xe200, 0x0 ; 0x28
-    dw 0x68, tss1, 0xe900, 0x0 ; 0x30
-    dw 0x40, ldt1, 0xe200, 0x0 ; 0x38
-    dw 0x0002, 0x8000, 0x920b, 0x00c0 ; 0x40
+    dw 0x07ff, 0x0000, 0x9a00, 0x00c0 ; 1, 0x08
+    dw 0x07ff, 0x0000, 0x9200, 0x00c0 ; 2, 0x10
+    dw 0x0002, 0x8000, 0x920b, 0x00c0 ; 3, 0x18
+    dw 0x40, ldt0, 0xe200, 0x0 ; 4 = LDT0_INDEX , 0x20
+gdt_new_process_base:
+    dw 0x68, tss0, 0xe900, 0x0 ; 5 = TSS0_INDEX , 0x28
+    times 4 * MAX_PROCESS_COUNT dw 0 ; 从第8个开始，提供额外10个进程空间
 end_gdt:
     times 128 dd 0 
 init_stack:
@@ -1085,60 +1274,52 @@ align 8
 ldt0:    dw 0, 0, 0, 0
     dw 0x03ff, 0x0000, 0xfa00, 0x00c0
     dw 0x03ff, 0x0000, 0xf200, 0x00c0
-
+align 8
+tss_start: ; 存放新分配的tss空间
 tss0:    dd 0
-    dd krn_stk0, 0x10
+    dd krn_stk0, 0x10 ; 第1个dd是内核栈
     dd 0, 0, 0, 0, 0
     dd 0, 0, 0, 0, 0
-    dd 0, 0, 0, 0, 0
+    dd 0
+    dd 0, 0, 0, 0 ; 第14个dd是用户栈
     dd 0, 0, 0, 0x17, 0, 0
     dd LDT0_SEL, 0x80000000
 
-    times 128 dd 0
-krn_stk0:
-
-align 8
-ldt1:    dw 0, 0, 0, 0
-    dw 0x03ff, 0x0000, 0xfa00, 0x00c0
-    dw 0x03ff, 0x0000, 0xf200, 0x00c0
-
-
-tss1:    dd 0
-    dd krn_stk1, 0x10
-    dd 0, 0, 0, 0, 0
-    dd task1, 0x200
-    dd 0, 0, 0, 0
-    dd usr_stk1, 0, 0, 0
-    dd 0x17, 0x0f, 0x17, 0x17, 0x17, 0x17
-    dd LDT1_SEL, 0x80000000
-
-    times 128 dd 0
-krn_stk1:
+    times 26 * MAX_PROCESS_COUNT dd 0 ; 用于存放新进程的tss
 
 task0:
-    int 0x79
-    
-    ; test error syscall
     push eax
-    mov eax, [current]
+    push ebx
+    push ecx
+    
+    mov ecx, 1 ; 创建5个子进程
+.mark_create_sub_task:
+    mov eax, NR_SYS_FORK ; fork
     int 0x80
+    hlt
+    mov ebx, [esp - 4] ; 取出返回值
+    cmp ebx, 0 ; 判断是否为子进程
+    
+    jne .mark_deal_sub_task
+    dec ecx
+    cmp ecx, 0
+    je .mark_finish
+    jmp .mark_create_sub_task
+.mark_deal_sub_task:
+    int 0x79 ; 显示时钟，时钟颜色由当前进程号决定
+    jmp .mark_deal_sub_task
+.mark_finish:
+    pop ecx
+    pop ebx
     pop eax
-
     jmp task0
     
+    times 128 * MAX_PROCESS_COUNT dd 0
     times 128 dd 0
-usr_stk0:    
+usr_stk0: 
+user_stack_head:
 
-task1: ;显示时间
-    int 0x79
-    
-    ; test error syscall
-    push eax
-    mov eax, [current]
-    int 0x80
-    pop eax
-
-    jmp task1
-
+    times 128 * MAX_PROCESS_COUNT dd 0
     times 128 dd 0
-usr_stk1:
+krn_stk0:
+user_kernel_stack_head:

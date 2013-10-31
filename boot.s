@@ -9,7 +9,7 @@ go:
 	mov ds, ax
 	mov  es, ax
 	mov ss, ax
-	mov sp,0x400
+	mov sp, 0x400
 
 ready_to_load:
 	mov ax, BootMessage	
@@ -27,7 +27,7 @@ load_system:
 	mov ax, 0x1000 ;SYSSEG
 	mov es, ax
 	xor bx, bx
-	mov ax, 0x200+ 17; SYSLEN
+	mov ax, 0x200 + 54 ; SYSLEN
 	int 0x13
 	jnc ok_load
 die:	jmp die
@@ -39,7 +39,7 @@ ok_load:
 	mov ds, ax
 	xor ax, ax
 	mov es, ax
-	mov cx, 4096 ; 移动4096个double word(4 bytes)，这里拷贝少了会导致加载的head.s代码不完整
+	mov cx, 8192 ; 移动8192个double word(4 bytes)，这里拷贝少了会导致加载的head.s代码不完整
 	sub si, si
 	sub di, di
 	rep movsd
