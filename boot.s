@@ -1,6 +1,6 @@
 BOOTSEG equ 0x07c0
 
-jmp BOOTSEG:go
+jmp BOOTSEG: go
 
 go:
     mov ax, cs
