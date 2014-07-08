@@ -1,20 +1,20 @@
-#include<mach-o/loader.h>
-#include<stdio.h>
-#include<stdlib.h>
-#include<sys/types.h>
-#include<sys/stat.h>
-#include<fcntl.h>
 #include <errno.h> 
+#include <fcntl.h>
+#include <mach-o/loader.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 
 #define FILE_ERROR(fd, fmt, err...) { close(fd); printf(fmt, ##err); }
 
 struct my_nlist
 {
-		int32_t n_strx;
-		uint8_t n_type;
-		uint8_t n_sect;
-		int16_t n_desc;
-		uint32_t n_value;
+    int32_t n_strx;
+    uint8_t n_type;
+    uint8_t n_sect;
+    int16_t n_desc;
+    uint32_t n_value;
 };
 
 int main(int argc, char* argv[])
@@ -187,7 +187,6 @@ int main(int argc, char* argv[])
 		FILE_ERROR(fd_head, "read head.bin failed(%d)\n", head_size);
 		return -1;
 	}
-
 
 	//write to system.bin
 	fd_out = open("system.bin", O_CREAT|O_TRUNC|O_WRONLY, 00700);
